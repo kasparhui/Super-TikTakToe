@@ -23,7 +23,7 @@ def play_game(AI_mode=False, player_turn='X'):
     clock = pygame.time.Clock()
 
     running = True
-    board = game.board([["-","-","-","-","-","-","-","-","-"] for _ in range(9)])
+    board = game.board([["-" for _ in range(9)] for _ in range(9)])
     while running:
         for e in pygame.event.get():
             if e.type == pygame.QUIT:
@@ -44,19 +44,19 @@ def play_game(AI_mode=False, player_turn='X'):
                         board.execute(player_turn,position)
                         player_turn=game.flip_player(player_turn)
 
-        '''if check_if_game_over(board): 
-                if game_is_win(board)[0]: print("Spieler "+player_turn+" hat gewonnen!")
-                if game_is_tie(board): print("Unentschieden!")
-                break'''
+        if  game.check_if_game_over(board.win_games): 
+                if game.game_is_win(board.win_games)[0]: print("Spieler "+player_turn+" hat gewonnen!")
+                if game.game_is_tie(board.win_games): print("Unentschieden!")
+                break
         if player_turn == 'O' and AI_mode:
             position = minmax(board,'O')[1]
             board.execute(player_turn,position)
             player_turn=game.flip_player(player_turn)
-        drawGameState(screen, board.board)
-        '''if check_if_game_over(board): 
-                if game_is_win(board)[0]: print("Spieler "+flip_player(player_turn)+" hat gewonnen!")
-                elif game_is_tie(board): print("Unentschieden!")
-                break'''
+        drawGameState(screen, board)
+        if  game.check_if_game_over(board.win_games): 
+                if game.game_is_win(board.win_games)[0]: print("Spieler "+game.flip_player(player_turn)+" hat gewonnen!")
+                elif game.game_is_tie(board.win_games): print("Unentschieden!")
+                break
         clock.tick(15)
         pygame.display.flip()
     running = True
@@ -66,22 +66,21 @@ def play_game(AI_mode=False, player_turn='X'):
                 running = False
             if e.type == pygame.MOUSEBUTTONDOWN:
                 pass
-        winLine = board.game_is_win()[1]
+        winLine = game.game_is_win(board.win_games)[1]
         drawGameState(screen, board)
         if winLine == 1 or winLine == 2 or winLine == 3:
-            pygame.draw.line(screen,'black',(0,(winLine-1)*200+100),(600,(winLine-1)*200+100),10)
+            pygame.draw.line(screen,'red',(0,(winLine-1)*HEIGHT//3+HEIGHT//6),(WIDTH,(winLine-1)*HEIGHT//3+HEIGHT//6),15)
         elif winLine == 4 or winLine == 5 or winLine ==6:
-            pygame.draw.line(screen,'black',((winLine-4)*200+100,0),((winLine-4)*200+100,600),10)
+            pygame.draw.line(screen,'red',((winLine-4)*WIDTH//3+WIDTH//6,0),((winLine-4)*WIDTH//3+WIDTH//6,WIDTH),15)
         elif winLine == 7:
-            pygame.draw.line(screen,'black',(0,0),(600,600),15)
+            pygame.draw.line(screen,'red',(0,0),(WIDTH,HEIGHT),20)
         elif winLine == 8:
-            pygame.draw.line(screen,'black',(0,600),(600,0),15)
+            pygame.draw.line(screen,'red',(0,HEIGHT),(WIDTH,0),20)
         else:
             pass
 
         clock.tick(15)
         pygame.display.flip()
-        
 
 
 if __name__ == '__main__':
