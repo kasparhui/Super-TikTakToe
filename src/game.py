@@ -35,26 +35,26 @@ class board:
         return 
 
 def check_rows(little_board):
-    a = (little_board[0]== little_board[1]==little_board[2] !="-")
-    b = (little_board[3]==little_board[4]==little_board[5]!="-") 
-    c = (little_board[6]==little_board[7]==little_board[8]!="-")
+    a = ('N' != little_board[0]== little_board[1]==little_board[2] !="-")
+    b = ('N' != little_board[3]==little_board[4]==little_board[5]!="-") 
+    c = ('N' != little_board[6]==little_board[7]==little_board[8]!="-")
     if a: return True, 4
     elif b: return True, 5
     elif c: return True, 6
     else: return False, -1
 
 def check_column(little_board):
-    a = (little_board[0]==little_board[3]==little_board[6]!="-")
-    b = (little_board[1]==little_board[4]==little_board[7]!="-") 
-    c = (little_board[2]==little_board[5]==little_board[8]!="-")
+    a = ('N' != little_board[0]==little_board[3]==little_board[6]!="-")
+    b = ('N' != little_board[1]==little_board[4]==little_board[7]!="-") 
+    c = ('N' != little_board[2]==little_board[5]==little_board[8]!="-")
     if a: return True, 1
     elif b: return True, 2
     elif c: return True, 3
 
     else: return False, -1
 def check_diagonal(little_board):
-    a = (little_board[0]==little_board[4]==little_board[8]!="-") 
-    b = (little_board[2]==little_board[4]==little_board[6]!="-")
+    a = ('N' != little_board[0]==little_board[4]==little_board[8]!="-") 
+    b = ('N' != little_board[2]==little_board[4]==little_board[6]!="-")
     if a: return True, 7
     elif b: return True, 8
     else: return False, -1
