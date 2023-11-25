@@ -2,9 +2,10 @@ import copy
 import pygame
 import random
 import game
-from minmax import minmax
+from AI import all_AI
 from draw_game import drawGameState
 from constants import *
+import numpy as np
 
 def little_position(pos):
     if 18<= pos < 87: 
@@ -23,7 +24,8 @@ def play_game(AI_mode=False, player_turn='X'):
     clock = pygame.time.Clock()
     font = pygame.font.Font(None, 80)
     running = True
-    board = game.board([["-" for _ in range(9)] for _ in range(9)])
+    board = game.board(np.zeros((9,9),dtype=np.int8))
+    AI = all_AI()
     while running:
         for e in pygame.event.get():
             if e.type == pygame.QUIT:
@@ -42,25 +44,26 @@ def play_game(AI_mode=False, player_turn='X'):
                         continue
                     position = (3*big_COL + big_ROW, 3*col + row)
                     if board.is_valid_move(position):
-                        board.execute(player_turn,position)
+                        board.execute(tic_tac_toe_mapping[player_turn],position)
                         player_turn=game.flip_player(player_turn)
+                    #print(board.board,board.won_games,board.next_move)
 
-        if  game.check_if_game_over(board.win_games): 
-            if game.game_is_win(board.win_games)[0]: 
+        if  game.check_if_game_over(board.won_games): 
+            if game.game_is_win(board.won_games)[0]: 
                 string = f'Spieler {game.flip_player(player_turn)} hat gewonnen!'
-            elif game.game_is_tie(board.win_games): 
+            elif game.game_is_tie(board.won_games): 
                 string = f'Unentschieden!'
             board.next_move = -1
             break
         if player_turn == 'O' and AI_mode:
-            position = minmax(board,'O')[1]
-            board.execute(player_turn,position)
+            position = AI.best_move(board,-1)[1]
+            board.execute(tic_tac_toe_mapping[player_turn],position)
             player_turn=game.flip_player(player_turn)
         drawGameState(screen, board)
-        if  game.check_if_game_over(board.win_games): 
-            if game.game_is_win(board.win_games)[0]: 
+        if  game.check_if_game_over(board.won_games): 
+            if game.game_is_win(board.won_games)[0]: 
                 string = f'Spieler {game.flip_player(player_turn)} hat gewonnen!'
-            elif game.game_is_tie(board.win_games): 
+            elif game.game_is_tie(board.won_games): 
                 string = f'Unentschieden!'
             board.next_move = -1
             break
@@ -80,7 +83,7 @@ def play_game(AI_mode=False, player_turn='X'):
                 if e.key == pygame.K_SPACE:
                     play_game(AI_mode,player_turn)
                     return
-        winLine = game.game_is_win(board.win_games)[1]
+        winLine = game.game_is_win(board.won_games)[1]
         drawGameState(screen, board)
         if winLine == 1 or winLine == 2 or winLine == 3:
             pygame.draw.line(screen,'red',(0,(winLine-1)*HEIGHT//3+HEIGHT//6),(WIDTH,(winLine-1)*HEIGHT//3+HEIGHT//6),15)
@@ -101,4 +104,4 @@ def play_game(AI_mode=False, player_turn='X'):
 
 
 if __name__ == '__main__':
-    play_game(False, 'X')
+    play_game(True, 'X')

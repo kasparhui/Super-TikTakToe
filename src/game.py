@@ -1,14 +1,15 @@
 import copy
 import pygame
 import random
+import numpy as np
 class board:
     def __init__(self,board):
         self.board = board
         self.next_move = None
-        self.win_games = ['-' for _ in range(9)]
+        self.won_games = np.zeros(9,dtype=np.int8)
 
     def is_valid_move(self,position):
-        if (self.board[position[0]][position[1]] == '-') and (self.win_games[position[0]] == '-'):
+        if (self.board[position[0]][position[1]] == 0) and (self.won_games[position[0]] == 0):
             if self.next_move == None :  
                 return True
             elif self.next_move == position[0]:
@@ -18,43 +19,43 @@ class board:
     def execute(self,player_turn,position):
         self.board[position[0]][position[1]] = player_turn
         if game_is_win(self.board[position[0]])[0]:
-            self.win_games[position[0]] = player_turn
+            self.won_games[position[0]] = player_turn
         elif game_is_tie(self.board[position[0]])[0]:
-            self.win_games[position[0]] = 'N'
-        if self.win_games[position[1]] != '-':
+            self.won_games[position[0]] = None
+        if self.won_games[position[1]] != 0:
             self.next_move = None
         else:
             self.next_move = position[1]
         return 
 
 def check_rows(little_board):
-    a = ('N' != little_board[0]== little_board[1]==little_board[2] !="-")
-    b = ('N' != little_board[3]==little_board[4]==little_board[5]!="-") 
-    c = ('N' != little_board[6]==little_board[7]==little_board[8]!="-")
+    a = (None != little_board[0]== little_board[1]==little_board[2] !=0)
+    b = (None != little_board[3]==little_board[4]==little_board[5]!=0) 
+    c = (None != little_board[6]==little_board[7]==little_board[8]!=0)
     if a: return True, 4
     elif b: return True, 5
     elif c: return True, 6
     else: return False, -1
 
 def check_column(little_board):
-    a = ('N' != little_board[0]==little_board[3]==little_board[6]!="-")
-    b = ('N' != little_board[1]==little_board[4]==little_board[7]!="-") 
-    c = ('N' != little_board[2]==little_board[5]==little_board[8]!="-")
+    a = (None != little_board[0]==little_board[3]==little_board[6]!=0)
+    b = (None != little_board[1]==little_board[4]==little_board[7]!=0) 
+    c = (None != little_board[2]==little_board[5]==little_board[8]!=0)
     if a: return True, 1
     elif b: return True, 2
     elif c: return True, 3
 
     else: return False, -1
 def check_diagonal(little_board):
-    a = ('N' != little_board[0]==little_board[4]==little_board[8]!="-") 
-    b = ('N' != little_board[2]==little_board[4]==little_board[6]!="-")
+    a = (None != little_board[0]==little_board[4]==little_board[8]!=0) 
+    b = (None != little_board[2]==little_board[4]==little_board[6]!=0)
     if a: return True, 7
     elif b: return True, 8
     else: return False, -1
 
 def game_is_tie(little_board):
     for i in little_board:
-        if i=="-": return False, -1
+        if i==0: return False, -1
     else: return True, 0
 
 def game_is_win(little_board):
