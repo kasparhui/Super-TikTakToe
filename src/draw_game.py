@@ -19,11 +19,15 @@ def drawGameState(screen, board):
             for row in range(3):
                 for col in range(3):
                     temp_board = board.board[big_row*3 + big_col]
+                    top_left = (big_row*WIDTH//3+row*((WIDTH//3-36)//3)+32,big_col*HEIGHT//3+col*((HEIGHT//3-36)//3)+26)
+                    top_right = (big_row*WIDTH//3+row*((WIDTH//3-36)//3)+73,big_col*HEIGHT//3+col*((HEIGHT//3-36)//3)+26)
+                    bottom_right = (big_row*WIDTH//3+row*((WIDTH//3-36)//3)+73,big_col*HEIGHT//3+col*((HEIGHT//3-36)//3)+79)
+                    bottom_left = (big_row*WIDTH//3+row*((WIDTH//3-36)//3)+32,big_col*HEIGHT//3+col*((HEIGHT//3-36)//3)+79)
                     if temp_board[3*row + col] == 'O':
                         pygame.draw.circle(screen, 'black', (big_row*WIDTH//3+row*((WIDTH//3-36)//3)+52.5,big_col*HEIGHT//3+col*((HEIGHT//3-36)//3)+52.5),26,6)
                     elif temp_board[3*row + col] == 'X':
-                        pygame.draw.line(screen,'black',(big_row*WIDTH//3+row*((WIDTH//3-36)//3)+32,big_col*HEIGHT//3+col*((HEIGHT//3-36)//3)+26),(big_row*WIDTH//3+row*((WIDTH//3-36)//3)+73,big_col*HEIGHT//3+col*((HEIGHT//3-36)//3)+79),8)
-                        pygame.draw.line(screen,'black',(big_row*WIDTH//3+row*((WIDTH//3-36)//3)+32,big_col*HEIGHT//3+col*((HEIGHT//3-36)//3)+79),(big_row*WIDTH//3+row*((WIDTH//3-36)//3)+73,big_col*HEIGHT//3+col*((HEIGHT//3-36)//3)+26),8)
+                        pygame.draw.line(screen,'black', top_left, bottom_right, 8)
+                        pygame.draw.line(screen,'black',top_right, bottom_left, 8)
             if board.win_games[big_row*3 + big_col] != '-':
                 if board.win_games[big_row*3 + big_col] == 'O':
                     pygame.draw.circle(screen, 'green', (big_row*WIDTH//3+121.5,big_col*HEIGHT//3+121.5),100,15)

@@ -15,13 +15,6 @@ class board:
                 return True
         return False
     
-    def print_board(self):
-        
-        print("---------")
-        print(self.board[0]+" | " +self.board[1]+" | " +self.board[2])
-        print(self.board[3]+" | " +self.board[4]+" | " +self.board[5])
-        print(self.board[6]+" | " +self.board[7]+" | " +self.board[8])
-
     def execute(self,player_turn,position):
         self.board[position[0]][position[1]] = player_turn
         if game_is_win(self.board[position[0]])[0]:
