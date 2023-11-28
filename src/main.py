@@ -47,6 +47,16 @@ def play_game(AI_mode=False, player_turn='X'):
                         board.execute(tic_tac_toe_mapping[player_turn],position)
                         player_turn=game.flip_player(player_turn)
                     #print(board.board,board.won_games,board.next_move)
+            if e.type == pygame.KEYDOWN:
+                if e.key == pygame.K_u:
+                    if player_turn == 'X' and AI_mode:
+                        if len(board.log) > 1:
+                            board.undo_move()
+                            board.undo_move()
+                    else:
+                        if board.log != []:
+                            board.undo_move()
+                            player_turn=game.flip_player(player_turn)
 
         if  game.check_if_game_over(board.won_games): 
             if game.game_is_win(board.won_games)[0]: 
