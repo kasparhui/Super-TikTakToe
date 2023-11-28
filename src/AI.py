@@ -1,26 +1,35 @@
 from game import *
 import random
 class all_AI:
-    def __init__(self):
-        pass
-    def game_state(self):
-        pass
-    def best_move(self,board,player_turn):
-        self.all_possible_moves = []
-        if board.next_move == None:
-            self.valid_positions = np.where(board.won_games == 0)[0].astype(np.int8)
-        else: 
-            self.valid_positions = np.array([board.next_move],dtype=np.int8)
-        self.valid_boards =  board.board[self.valid_positions]
-        for valid_board in self.valid_boards:
-            all_valid = np.where(valid_board == 0)[0].astype(np.int8)
-            self.all_possible_moves.append(all_valid)
-        return self.random_move(board,player_turn)
+    def __init__(self, player):
+        self.player = player
 
-    def random_move(self,board,player_turn):
-        choice = random.randrange(len(self.valid_positions))
-        position = (self.valid_positions[choice], np.random.choice(self.all_possible_moves[choice]))
-        return None, position
+    def make_move(self, board, mode):
+        if mode == 'random_move':
+            return self.random_move(board)
+        elif mode == 'best_move':
+            return self.best_move(board)
+        else:
+            print('Kein gültiger move')
+        
+    def best_move(self,board):
+        possible_moves = self.possible_moves(board)
+        values = np.zeros_like(possible_moves)
+        return self.random_move(board)
+
+    def random_move(self,board):
+        position = np.random.choice(self.possible_moves(board))
+        return (position//9, position%9)
+    
+    def possible_moves(self,board):
+        if board.next_move == None:
+            possible_moves = np.array([],dtype=np.int8)
+            for i in range(9):
+                if board.won_games[i] == 0:
+                    possible_moves = np.concatenate((possible_moves, np.where(board.board[i] == 0)[0] +9*i))
+        else:
+            possible_moves = np.where(board.board[board.next_move] == 0)[0] + board.next_move * 9
+        return possible_moves
 
         
 

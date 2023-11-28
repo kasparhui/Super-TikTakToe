@@ -25,7 +25,7 @@ def play_game(AI_mode=False, player_turn='X'):
     font = pygame.font.Font(None, 80)
     running = True
     board = game.board(np.zeros((9,9),dtype=np.int8))
-    AI = all_AI()
+    AI = all_AI(-1)
     while running:
         for e in pygame.event.get():
             if e.type == pygame.QUIT:
@@ -66,7 +66,7 @@ def play_game(AI_mode=False, player_turn='X'):
             board.next_move = -1
             break
         if player_turn == 'O' and AI_mode:
-            position = AI.best_move(board,-1)[1]
+            position = AI.make_move(board,'random_move')
             board.execute(tic_tac_toe_mapping[player_turn],position)
             player_turn=game.flip_player(player_turn)
         drawGameState(screen, board)
