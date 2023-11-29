@@ -20,7 +20,7 @@ def little_position(pos):
 def play_game(AI_mode=False, player_turn='X'):
     pygame.init()
     pygame.display.set_caption('Super TikTakToe')
-    screen = pygame.display.set_mode((WIDTH,HEIGHT + 70 ))
+    screen = pygame.display.set_mode((WIDTH ,HEIGHT + 70 ))
     clock = pygame.time.Clock()
     font = pygame.font.Font(None, 80)
     running = True
@@ -46,6 +46,7 @@ def play_game(AI_mode=False, player_turn='X'):
                     if board.is_valid_move(position):
                         board.execute(tic_tac_toe_mapping[player_turn],position)
                         player_turn=game.flip_player(player_turn)
+                        board.last_move = position
                     #print(board.board,board.won_games,board.next_move)
             if e.type == pygame.KEYDOWN:
                 if e.key == pygame.K_u:
@@ -69,6 +70,7 @@ def play_game(AI_mode=False, player_turn='X'):
             position = AI.make_move(board,'random_move')
             board.execute(tic_tac_toe_mapping[player_turn],position)
             player_turn=game.flip_player(player_turn)
+            board.last_move = position
         drawGameState(screen, board)
         if  game.check_if_game_over(board.won_games): 
             if game.game_is_win(board.won_games)[0]: 
@@ -114,4 +116,4 @@ def play_game(AI_mode=False, player_turn='X'):
 
 
 if __name__ == '__main__':
-    play_game(True, 'X')
+    play_game(True,'X')

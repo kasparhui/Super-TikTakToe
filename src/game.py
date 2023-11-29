@@ -9,6 +9,7 @@ class board:
         self.next_move = None
         self.won_games = np.zeros(9,dtype=np.int8)
         self.log = []
+        self.last_move = None
     def is_valid_move(self,position):
         if (self.board[position[0]][position[1]] == 0) and (self.won_games[position[0]] == 0):
             if self.next_move == None :  
@@ -35,8 +36,10 @@ class board:
         self.board[position[0]][position[1]] = 0
         if len(self.log)!= 1:
             self.next_move = self.log[-2][2]
+            self.last_move = self.log[-2][1]
         else:
             self.next_move = None
+            self.last_move = None
         if not check_if_game_over(self.board[position[0]]):
             self.won_games[position[0]] = 0
         self.log.pop(-1)
