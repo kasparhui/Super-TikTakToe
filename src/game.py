@@ -101,4 +101,6 @@ def change_player_state(playerturn):
 def flip_player(player_turn):
     if player_turn=="X": return "O"
     elif player_turn=="O": return "X"
+    elif player_turn == 1: return -1
+    elif player_turn == -1: return 1
     else: print("WTF")

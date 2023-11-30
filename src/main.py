@@ -47,6 +47,7 @@ def play_game(AI_mode=False, player_turn='X'):
                         board.execute(tic_tac_toe_mapping[player_turn],position)
                         player_turn=game.flip_player(player_turn)
                         board.last_move = position
+                        print( AI.get_evalution(board, show_all_states = True))
                     #print(board.board,board.won_games,board.next_move)
             if e.type == pygame.KEYDOWN:
                 if e.key == pygame.K_u:
@@ -66,19 +67,7 @@ def play_game(AI_mode=False, player_turn='X'):
                 string = f'Unentschieden!'
             board.next_move = -1
             break
-        if player_turn == 'O' and AI_mode:
-            position = AI.make_move(board,'random_move')
-            board.execute(tic_tac_toe_mapping[player_turn],position)
-            player_turn=game.flip_player(player_turn)
-            board.last_move = position
         drawGameState(screen, board)
-        if  game.check_if_game_over(board.won_games): 
-            if game.game_is_win(board.won_games)[0]: 
-                string = f'Spieler {game.flip_player(player_turn)} hat gewonnen!'
-            elif game.game_is_tie(board.won_games): 
-                string = f'Unentschieden!'
-            board.next_move = -1
-            break
         string = f'Spieler {player_turn} ist am Zug'
         text_surface = font.render(string, True, 'black')
         text_rect = text_surface.get_rect()
@@ -86,6 +75,21 @@ def play_game(AI_mode=False, player_turn='X'):
         screen.blit(text_surface, text_rect)
         clock.tick(15)
         pygame.display.flip()
+        if player_turn == 'O' and AI_mode:
+            position = AI.make_move(board,'best_move',depth = 5)
+            board.execute(tic_tac_toe_mapping[player_turn],position)
+            player_turn=game.flip_player(player_turn)
+            board.last_move = position
+
+        if  game.check_if_game_over(board.won_games): 
+            if game.game_is_win(board.won_games)[0]: 
+                string = f'Spieler {game.flip_player(player_turn)} hat gewonnen!'
+            elif game.game_is_tie(board.won_games): 
+                string = f'Unentschieden!'
+            board.next_move = -1
+            break
+        drawGameState(screen, board)
+        
     running = True
     while running:
         for e in pygame.event.get():
