@@ -14,10 +14,10 @@ class all_AI:
         else:
             print('Kein gültiger move')
 
-    def straight_count(self, pos1, pos2, pos3):
-        temp_array = np.array([pos1, pos2, pos3])
+    def straight_count(self, temp_array):
+    
 
-        if (np.count_nonzero(temp_array == 1) > 0) and (np.count_nonzero(temp_array == -1) > 0):
+        if ((np.count_nonzero(temp_array == 1) > 0) and (np.count_nonzero(temp_array == -1) > 0)) or (np.count_nonzero(temp_array == 2)>0):
             return 0
         else:
             return( np.sum(temp_array) ** 3)
@@ -27,10 +27,10 @@ class all_AI:
     def little_evaluation(self, little_board):
         state = little_board.sum() - (2* np.count_nonzero(little_board == 2))
         for i in range (3):
-            state += self.straight_count(little_board[3*i],little_board[3*i+1],little_board[3*i+2])
-            state += self.straight_count(little_board[i],little_board[i+3],little_board[i+6])
-        state += self.straight_count(little_board[0], little_board[4],little_board[8])
-        state += self.straight_count(little_board[2], little_board[4], little_board[6])
+            state += self.straight_count(np.array([little_board[3*i],little_board[3*i+1],little_board[3*i+2]]))
+            state += self.straight_count(np.array([little_board[i],little_board[i+3],little_board[i+6]]))
+        state += self.straight_count(np.array([little_board[0], little_board[4],little_board[8]]))
+        state += self.straight_count(np.array([little_board[2], little_board[4], little_board[6]]))
         
         return 0.75 * math.tanh(state/10)
 
