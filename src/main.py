@@ -26,6 +26,7 @@ def play_game(AI_mode=False, player_turn='X'):
     running = True
     board = game.board(np.zeros((9,9),dtype=np.int8))
     AI = all_AI(-1)
+    AI.board = board
     while running:
         for e in pygame.event.get():
             if e.type == pygame.QUIT:
@@ -47,7 +48,7 @@ def play_game(AI_mode=False, player_turn='X'):
                         board.execute(tic_tac_toe_mapping[player_turn],position)
                         player_turn=game.flip_player(player_turn)
                         board.last_move = position
-                        print( AI.get_evalution(board, show_all_states = True))
+                        print( AI.get_evalution(show_all_states = True))
                     #print(board.board,board.won_games,board.next_move)
             if e.type == pygame.KEYDOWN:
                 if e.key == pygame.K_u:
@@ -76,7 +77,7 @@ def play_game(AI_mode=False, player_turn='X'):
         clock.tick(15)
         pygame.display.flip()
         if player_turn == 'O' and AI_mode:
-            position = AI.make_move(board,'best_move',depth = 3)
+            position = AI.make_move(board,'best_move',depth = 5, smart_depth= 25)
             board.execute(tic_tac_toe_mapping[player_turn],position)
             player_turn=game.flip_player(player_turn)
             board.last_move = position
