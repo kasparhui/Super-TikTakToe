@@ -76,7 +76,7 @@ def play_game(AI_mode=False, player_turn='X'):
         clock.tick(15)
         pygame.display.flip()
         if player_turn == 'O' and AI_mode:
-            position = AI.make_move(board,'best_move',depth = 5)
+            position = AI.make_move(board,'best_move',depth = 3)
             board.execute(tic_tac_toe_mapping[player_turn],position)
             player_turn=game.flip_player(player_turn)
             board.last_move = position
