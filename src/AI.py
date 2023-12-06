@@ -19,7 +19,18 @@ class all_AI:
             return 0
         else:
             return( np.sum(temp_array) ** 3)
-            
+
+    def get_possible_moves(self, board):
+        possible_moves = np.zeros((9,9),dtype=np.int8)
+        if  board.next_move == None:
+            for i in range(9):
+                if board.won_games[i] == 0:
+                    positions = np.where(board.board[i] == 0)[0]
+                    possible_moves[i,positions] = 1
+        else:
+            positions = np.where(board.board[board.next_move] == 0)[0]
+            possible_moves[board.next_move,positions] = 1
+        return possible_moves
 
 
     def little_evaluation(self, little_board):

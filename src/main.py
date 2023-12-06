@@ -24,7 +24,7 @@ def play_game(AI_mode=False, player_turn='X'):
     clock = pygame.time.Clock()
     font = pygame.font.Font(None, 80)
     running = True
-    board = game.board(np.zeros((9,9),dtype=np.int8))
+    board = game.board(np.zeros((9,9),dtype=np.int8), tic_tac_toe_mapping[player_turn])
     AI = all_AI(-1)
     AI.board = board
     while running:
@@ -48,7 +48,8 @@ def play_game(AI_mode=False, player_turn='X'):
                         board.execute(tic_tac_toe_mapping[player_turn],position)
                         player_turn=game.flip_player(player_turn)
                         board.last_move = position
-                        print( AI.get_evalution(show_all_states = True))
+                        #print( AI.get_evalution(show_all_states = True))
+                        print(AI.get_possible_moves(board))
                     #print(board.board,board.won_games,board.next_move)
             if e.type == pygame.KEYDOWN:
                 if e.key == pygame.K_u:

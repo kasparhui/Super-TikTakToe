@@ -1,15 +1,15 @@
 import copy
-import pygame
 import random
 import numpy as np
 from constants import *
 class board:
-    def __init__(self,board):
+    def __init__(self,board, playerturn):
         self.board = board
         self.next_move = None
         self.won_games = np.zeros(9,dtype=np.int8)
         self.log = []
         self.last_move = None
+        self.playerturn = playerturn
 
     def is_valid_move(self,position):
         if (self.board[position[0]][position[1]] == 0) and (self.won_games[position[0]] == 0):
@@ -30,8 +30,9 @@ class board:
         else:
             self.next_move = position[1]
         self.log.append((player_turn,position,self.next_move))
-        return 
-    
+        self.playerturn = flip_player(self.playerturn)
+        return
+        
     def undo_move(self):
         position = self.log[-1][1]
         self.board[position[0]][position[1]] = 0
@@ -44,6 +45,8 @@ class board:
         if not check_if_game_over(self.board[position[0]]):
             self.won_games[position[0]] = 0
         self.log.pop(-1)
+        self.playerturn = flip_player(self.playerturn)
+        return
 
 def check_rows(little_board):
     a = (2 != little_board[0]== little_board[1]==little_board[2] !=0)
@@ -100,8 +103,8 @@ def change_player_state(playerturn):
 
     
 def flip_player(player_turn):
-    if player_turn=="X": return "O"
-    elif player_turn=="O": return "X"
-    elif player_turn == 1: return -1
+    if player_turn == 1: return -1
     elif player_turn == -1: return 1
+    elif player_turn=="X": return "O"
+    elif player_turn=="O": return "X"
     else: print("WTF")
