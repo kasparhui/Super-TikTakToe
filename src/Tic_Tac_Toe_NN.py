@@ -117,17 +117,20 @@ if __name__ == "__main__":
     import game
     import numpy as np
     import AI
+    import time
     perfektes_netz = UltimateTicTacToeNet()
     board = game.board(np.zeros((9,9),dtype=np.int8),1)
     ai_board = board.board.reshape(3, 3, 3, 3).transpose(0, 2, 1, 3).reshape(9, 9)
     ai = AI.all_AI(1)
-    possible_moves = ai.get_possible_moves(board)
-
-
+    possible_moves = ai.get_possible_moves(board).reshape(3, 3, 3, 3).transpose(0, 2, 1, 3).reshape(9, 9)
+    
     ai_board = torch.Tensor(ai_board).unsqueeze(0)  # Hinzufügen der Batch-Dimension (1x9x9)
     possible_moves = torch.Tensor(possible_moves).unsqueeze(0)  # Hinzufügen der Batch-Dimension (1x9x9)
 
     # Kombiniere die beiden Tensoren entlang der ersten Achse
     AI_input = torch.cat((ai_board, possible_moves), dim=0)
+    start = time.time()
     evaluation = perfektes_netz(AI_input)
+    end = time.time()
     print(evaluation)
+    print(end-start)
