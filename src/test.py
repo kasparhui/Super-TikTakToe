@@ -23,13 +23,27 @@ class NeuralNet(nn.Module):
         x = self.activation(self.fc6(x))
         x = self.fc7(x)
         return x
-    
+
+# Definition des neuronalen Netzwerks
+class NeuralNetCooler(nn.Module):
+    def __init__(self, sizes):
+        super(NeuralNetCooler, self).__init__()
+        self.layers = nn.ModuleList()
+        for i in range(len(sizes)-1):
+            self.layers.append(nn.Linear(sizes[i], sizes[i+1]))
+        self.activation = nn.ReLU()  # Aktivierungsfunktion
+
+    def forward(self, x):
+        for layer in self.layers[:-1]:
+            x = self.activation(layer(x))
+        return self.layers[-1](x)
+
 if __name__ == '__main__':
     import numpy as np
     import matplotlib.pyplot as plt
     from AI import all_AI
     import random
-    from test_evaluation import check_if_game_over
+    from little_evaluation_test import check_if_game_over
     import os
     from itertools import product
     from constants import *
@@ -43,23 +57,12 @@ if __name__ == '__main__':
     #print(x_values)
     y_values = np.array([AI.little_evaluation(board) for board in x_values])
 
-    print('lolol')
-
     # PyTorch-Tensoren erstellen
     x_train = torch.tensor(x_values, dtype=torch.float32)#.view(-1, 1)
     y_train = torch.tensor(y_values, dtype=torch.float32).view(-1, 1)
-
-    input_size = 9
-    hidden_size1 = 300
-    hidden_size2 = 100
-    hidden_size3 = 50
-    hidden_size4 = 30
-    hidden_size5 = 20
-    hidden_size6 = 5
-    output_size = 1
-
     # Netzwerk initialisieren 
-    model = NeuralNet(input_size, hidden_size1, hidden_size2, hidden_size3, hidden_size4, hidden_size5, hidden_size6, output_size)
+    
+    model = NeuralNetCooler([9, 20, 8, 1])
     if os.path.exists(path):
         model.load_state_dict(torch.load(path))
     model.train()
@@ -85,7 +88,7 @@ if __name__ == '__main__':
             if (epoch+1) % 100 == 0:
                 print(f'Epoch [{epoch+1}/{epochs}], Loss: {loss.item():.4f}')
     except KeyboardInterrupt:
-        print("finito")
+        print("finito basta!")
 
     # Test
     model.eval()

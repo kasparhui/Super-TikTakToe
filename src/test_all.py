@@ -2,15 +2,16 @@ import AI
 import os
 import torch
 import random
-from test_evaluation import check_if_game_over
+from little_evaluation_test import check_if_game_over
 import time
 from constants import *
 import short_test
+import test
 import numpy as np
 
 ai = AI.all_AI(-1)
-model = short_test.NeuralNet(input_short_size, hidden_short_size1,hidden_short_size2,hidden_short_size3,output_short_size)
-model.load_state_dict(torch.load(path_short))
+model = test.NeuralNetCooler(combined_size)
+model.load_state_dict(torch.load(path))
 model.eval()
 
 while True:

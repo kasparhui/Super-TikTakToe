@@ -10,6 +10,7 @@ class board:
         self.won_games = np.zeros(9,dtype=np.int8)
         self.log = []
         self.last_move = None
+
     def is_valid_move(self,position):
         if (self.board[position[0]][position[1]] == 0) and (self.won_games[position[0]] == 0):
             if self.next_move == None :  
@@ -60,8 +61,8 @@ def check_column(little_board):
     if a: return True, 1
     elif b: return True, 2
     elif c: return True, 3
-
     else: return False, -1
+
 def check_diagonal(little_board):
     a = (2 != little_board[0]==little_board[4]==little_board[8]!=0) 
     b = (2 != little_board[2]==little_board[4]==little_board[6]!=0)

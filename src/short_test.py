@@ -42,7 +42,7 @@ if __name__ == '__main__':
     import matplotlib.pyplot as plt
     from AI import all_AI
     import random
-    from test_evaluation import check_if_game_over
+    from little_evaluation_test import check_if_game_over
     import os
     from itertools import product
     from constants import *
