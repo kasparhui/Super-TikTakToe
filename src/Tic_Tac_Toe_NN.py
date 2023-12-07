@@ -1,6 +1,7 @@
 # Imports
 import torch
 import torch.nn as nn
+import os
 
 class ConvBlock(nn.Module):
     def __init__(self):
@@ -97,20 +98,70 @@ class MCTS:
         pass
 
 # Hauptalgorithmus für das Training von AlphaZero
+class AlphaLoss(nn.Module):
+    def __init__(self):
+        super(AlphaLoss, self).__init__()
+
+    def forward(self, y_value, value, y_policy, policy):
+        value_error = (value - y_value) ** 2
+        policy_error = torch.sum((-policy * (1e-6 + y_policy.float()).float().log()), 1)
+        print(value_error,'ve',policy_error,'pe')
+        total_error = (value_error.view(-1).float() + policy_error).mean()
+        return total_error
     
 class AlphaZero:
-    def __init__(self):
+    def __init__(self, model):
         # Initialisiere Parameter für das Training
-        pass
-
+        self.model = model
     def self_play(self, game, neural_net):
         # Führe Selbstspiele durch, um Daten für das Training zu generieren
         pass
 
-    def train_neural_net(self, training_data):
-        # Trainiere das neuronale Netzwerk mit den generierten Daten
-        pass
+    def train_neural_net(self, dataset, epoch_start=0, epoch_stop=20, cpu=0):
+        torch.manual_seed(cpu)
+        cuda = torch.cuda.is_available()
+        self.model.train()
+        criterion = AlphaLoss()
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=0.003)
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[100, 200, 300, 400], gamma=0.2)
 
+        train_loader = DataLoader(dataset, batch_size=30, shuffle=True, num_workers=0, pin_memory=False)
+        losses_per_epoch = []
+
+        for epoch in range(epoch_start, epoch_stop):
+            total_loss = 0.0
+            losses_per_batch = [1000]
+
+            for i, data in enumerate(train_loader, 0):
+                state, policy, value = data
+
+                if cuda:
+                    state, policy, value = state.cuda().float(), policy.float().cuda(), value.cuda().float()
+
+                optimizer.zero_grad()
+                policy_pred, value_pred = self.model(state)
+
+                loss = criterion(value_pred, value, policy_pred, policy)
+                print(value_pred, value, policy_pred, policy)
+                loss.backward()
+                optimizer.step()
+
+                total_loss += loss.item()
+
+                if i % 10 == 9:
+                    print(f'Epoch: {epoch + 1}, Data points: {(i + 1) * 30}/{len(dataset)}, Total loss per batch: {total_loss / 10}')
+                    print("Policy:", policy[0].argmax().item(), policy_pred[0].argmax().item())
+                    print("Value:", value[0].item(), value_pred[0, 0].item())
+
+                    losses_per_batch.append(total_loss / 10)
+                    total_loss = 0.0
+
+            losses_per_epoch.append(sum(losses_per_batch) / len(losses_per_batch))
+
+            if len(losses_per_epoch) > 100:
+                if abs(sum(losses_per_epoch[-4:-1]) / 3 - sum(losses_per_epoch[-16:-13]) / 3) <= 0.01:
+                    break
+            scheduler.step()
 # Beispiel für die Verwendung
 if __name__ == "__main__":
     # Beispiel für die Nutzung der implementierten Klassen
@@ -118,8 +169,18 @@ if __name__ == "__main__":
     import numpy as np
     import AI
     import time
-    perfektes_netz = UltimateTicTacToeNet()
+    from torch.utils.data import Dataset, DataLoader
+    import datasets
+
+    path = os.path.join('models', f'first_model_weights.pth')
+    model = UltimateTicTacToeNet()
+    if os.path.exists(path):
+        model.load_state_dict(torch.load(path))
+        model.eval()
+    TicTacToeZero = AlphaZero(model)
+
     board = game.board(np.zeros((9,9),dtype=np.int8),1)
+    board.execute(1,(1,4))
     ai_board = board.board.reshape(3, 3, 3, 3).transpose(0, 2, 1, 3).reshape(9, 9)
     ai = AI.all_AI(1)
     possible_moves = ai.get_possible_moves(board).reshape(3, 3, 3, 3).transpose(0, 2, 1, 3).reshape(9, 9)
@@ -129,8 +190,20 @@ if __name__ == "__main__":
 
     # Kombiniere die beiden Tensoren entlang der ersten Achse
     AI_input = torch.cat((ai_board, possible_moves), dim=0)
-    start = time.time()
-    evaluation = perfektes_netz(AI_input)
-    end = time.time()
+
+
+    evaluation = TicTacToeZero.model(AI_input)
+
     print(evaluation)
-    print(end-start)
+
+    dataset = datasets.CustomDataset(1)
+    single_set = dataset.__getitem__(1)
+    #print(single_set)
+    #TicTacToeZero.train_neural_net([single_set, single_set])
+    TicTacToeZero.train_neural_net([single_set])
+
+    evaluation = TicTacToeZero.model(AI_input)
+    #print(evaluation)
+    torch.save(model.state_dict(), path)
+    #print(model.state_dict())
+    print(f"Das trainierte Modell wurde unter '{path}' gespeichert.")
