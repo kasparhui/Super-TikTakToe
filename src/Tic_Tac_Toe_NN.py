@@ -105,8 +105,9 @@ class AlphaLoss(nn.Module):
     def forward(self, y_value, value, y_policy, policy):
         value_error = (value - y_value) ** 2
         policy_error = torch.sum((-policy * (1e-6 + y_policy.float()).float().log()), 1)
-        print(value_error,'ve',policy_error,'pe')
+        #print(value_error,'ve',policy_error,'pe')
         total_error = (value_error.view(-1).float() + policy_error).mean()
+        print(total_error,'Total error')
         return total_error
     
 class AlphaZero:
@@ -117,7 +118,7 @@ class AlphaZero:
         # Führe Selbstspiele durch, um Daten für das Training zu generieren
         pass
 
-    def train_neural_net(self, dataset, epoch_start=0, epoch_stop=20, cpu=0):
+    def train_neural_net(self, dataset, epoch_start=0, epoch_stop=2, cpu=0):
         torch.manual_seed(cpu)
         cuda = torch.cuda.is_available()
         self.model.train()
@@ -125,12 +126,12 @@ class AlphaZero:
         optimizer = torch.optim.Adam(self.model.parameters(), lr=0.003)
         scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[100, 200, 300, 400], gamma=0.2)
 
-        train_loader = DataLoader(dataset, batch_size=30, shuffle=True, num_workers=0, pin_memory=False)
+        train_loader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=0, pin_memory=False)
         losses_per_epoch = []
 
         for epoch in range(epoch_start, epoch_stop):
             total_loss = 0.0
-            losses_per_batch = [1000]
+            losses_per_batch = []
 
             for i, data in enumerate(train_loader, 0):
                 state, policy, value = data
@@ -142,7 +143,7 @@ class AlphaZero:
                 policy_pred, value_pred = self.model(state)
 
                 loss = criterion(value_pred, value, policy_pred, policy)
-                print(value_pred, value, policy_pred, policy)
+                #print(value_pred, value, policy_pred, policy)
                 loss.backward()
                 optimizer.step()
 
@@ -200,7 +201,7 @@ if __name__ == "__main__":
     single_set = dataset.__getitem__(1)
     #print(single_set)
     #TicTacToeZero.train_neural_net([single_set, single_set])
-    TicTacToeZero.train_neural_net([single_set])
+    TicTacToeZero.train_neural_net([single_set,single_set,single_set,single_set,single_set,single_set,single_set,single_set,single_set,single_set,single_set])
 
     evaluation = TicTacToeZero.model(AI_input)
     #print(evaluation)
