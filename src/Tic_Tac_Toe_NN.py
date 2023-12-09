@@ -48,6 +48,7 @@ class OutBlock(nn.Module):
         self.conv1 = nn.Conv2d(256, 128, kernel_size=1) # policy head
         self.bn1 = nn.BatchNorm2d(128)
         self.logsoftmax = nn.LogSoftmax(dim=1)
+        self.softmax = nn.Softmax(dim=1)
         self.fc3 = nn.Linear(9*9*128, 9*9*16)
         self.fc4 = nn.Linear(9*9*16, 9*9)
 
@@ -63,7 +64,7 @@ class OutBlock(nn.Module):
         p = p.view(-1, 9*9*128)
         p = self.activation(self.fc3(p))
         p = self.fc4(p)
-        p = self.logsoftmax(p).exp()
+        p = self.softmax(p)
         return p, v
     
 class UltimateTicTacToeNet(nn.Module):
@@ -104,10 +105,11 @@ class AlphaLoss(nn.Module):
 
     def forward(self, y_value, value, y_policy, policy):
         value_error = (value - y_value) ** 2
-        policy_error = torch.sum((-policy * (1e-6 + y_policy.float()).float().log()), 1)
+        policy_error = torch.sum((-policy * (1e-6 + y_policy.float()).float().log()))
         #print(value_error,'ve',policy_error,'pe')
-        total_error = (value_error.view(-1).float() + policy_error).mean()
-        print(total_error,'Total error')
+        lamm = 0.5
+        total_error = (value_error.view(-1).float() * lamm + policy_error * (1-lamm))
+        #print(total_error,'Total error')
         return total_error
     
 class AlphaZero:
@@ -118,13 +120,13 @@ class AlphaZero:
         # Führe Selbstspiele durch, um Daten für das Training zu generieren
         pass
 
-    def train_neural_net(self, dataset, epoch_start=0, epoch_stop=2, cpu=0):
+    def train_neural_net(self, dataset, epoch_start=0, epoch_stop=20, cpu=0):
         torch.manual_seed(cpu)
         cuda = torch.cuda.is_available()
         self.model.train()
         criterion = AlphaLoss()
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=0.003)
-        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[100, 200, 300, 400], gamma=0.2)
+        optimizer = torch.optim.SGD(self.model.parameters(), lr=0.003)
+        #scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[100, 200, 300, 400], gamma=0.2)
 
         train_loader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=0, pin_memory=False)
         losses_per_epoch = []
@@ -162,7 +164,7 @@ class AlphaZero:
             if len(losses_per_epoch) > 100:
                 if abs(sum(losses_per_epoch[-4:-1]) / 3 - sum(losses_per_epoch[-16:-13]) / 3) <= 0.01:
                     break
-            scheduler.step()
+            #scheduler.step()
 # Beispiel für die Verwendung
 if __name__ == "__main__":
     # Beispiel für die Nutzung der implementierten Klassen
@@ -208,3 +210,4 @@ if __name__ == "__main__":
     torch.save(model.state_dict(), path)
     #print(model.state_dict())
     print(f"Das trainierte Modell wurde unter '{path}' gespeichert.")
+    print(evaluation)
