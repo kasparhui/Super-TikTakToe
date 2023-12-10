@@ -1,6 +1,7 @@
 from game import *
 import random
 import math
+import MCTS
 class all_AI:
     def __init__(self, player):
         self.player = player
@@ -11,6 +12,8 @@ class all_AI:
             return self.random_move()
         elif mode == 'best_move':
             return self.best_move(depth, smart_depth)
+        elif mode == 'naiv_MCTC':
+            return self.naiv_MCTC()
         else:
             print('Kein gültiger move')
 
@@ -60,15 +63,15 @@ class all_AI:
         position = np.random.choice(self.possible_moves())
         return (position//9, position%9)
     
+    def naiv_MCTC(self, iterations = 1000):
+        node = MCTS.Node(self.board)
+        mcts = MCTS.MonteCarloTreeSearch(node)
+        best_move = mcts.best_move(iterations)
+        return best_move[0]
+
     def possible_moves(self):
-        if self.board.next_move == None:
-            possible_moves = np.array([],dtype=np.int8)
-            for i in range(9):
-                if self.board.won_games[i] == 0:
-                    possible_moves = np.concatenate((possible_moves, np.where(self.board.board[i] == 0)[0] +9*i))
-        else:
-            possible_moves = np.where(self.board.board[self.board.next_move] == 0)[0] + self.board.next_move * 9
-        return possible_moves
+    
+        return self.board.possible_moves()
 
     def minmax(self, playerturn, depth, smart_depth):
         if check_if_game_over(self.board.won_games):
@@ -78,13 +81,12 @@ class all_AI:
                 return 0, None
         if depth ==1:
             return self.get_evalution(), None
-        moves = self.possible_moves()
-        actions = np.array([[j//9, j%9] for j in moves])
+        actions = self.possible_moves()
         if len(actions) > smart_depth:
             if depth != 2:
                 depth1_evaluation = []
                 for i, action in enumerate(actions):
-                    self.board.execute(playerturn,action)
+                    self.board.execute(action)
                     depth1_evaluation.append(self.get_evalution())
                     self.board.undo_move()
                 depth1_evaluation = np.array(depth1_evaluation)
@@ -95,7 +97,7 @@ class all_AI:
             value = -2
             for i in actions:
                 playerflip = flip_player(playerturn)
-                self.board.execute(playerturn, i)
+                self.board.execute(i)
                 best = self.minmax(playerflip, depth-1, smart_depth)[0]
                 if best >= value:
                     if best > value:
@@ -109,7 +111,7 @@ class all_AI:
             value = 2
             for i in actions:
                 playerflip = flip_player(playerturn)
-                self.board.execute(playerturn,i)
+                self.board.execute(i)
                 best = self.minmax(playerflip, depth-1, smart_depth)[0]
                 if best <= value:
                     if best < value:

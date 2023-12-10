@@ -10,6 +10,7 @@ class board:
         self.log = []
         self.last_move = None
         self.playerturn = playerturn
+        self.game_is_over = False
 
     def is_valid_move(self,position):
         if (self.board[position[0]][position[1]] == 0) and (self.won_games[position[0]] == 0):
@@ -19,17 +20,19 @@ class board:
                 return True
         return False
     
-    def execute(self,player_turn,position):
-        self.board[position[0]][position[1]] = player_turn
+    def execute(self,position):
+        self.board[position[0]][position[1]] = self.playerturn
         if game_is_win(self.board[position[0]])[0]:
-            self.won_games[position[0]] = player_turn
+            self.won_games[position[0]] = self.playerturn
+            self.game_is_over = check_if_game_over(self.won_games)
         elif game_is_tie(self.board[position[0]])[0]:
             self.won_games[position[0]] = 2
+            self.game_is_over = check_if_game_over(self.won_games)
         if self.won_games[position[1]] != 0:
             self.next_move = None
         else:
             self.next_move = position[1]
-        self.log.append((player_turn,position,self.next_move))
+        self.log.append((self.playerturn,position,self.next_move))
         self.playerturn = flip_player(self.playerturn)
         return
         
@@ -47,6 +50,17 @@ class board:
         self.log.pop(-1)
         self.playerturn = flip_player(self.playerturn)
         return
+    
+    def possible_moves(self):
+        if self.next_move == None:
+            possible_moves = np.array([],dtype=np.int8)
+            for i in range(9):
+                if self.won_games[i] == 0:
+                    possible_moves = np.concatenate((possible_moves, np.where(self.board[i] == 0)[0] +9*i))
+        else:
+            possible_moves = np.where(self.board[self.next_move] == 0)[0] + self.next_move * 9
+        actions = np.array([[j//9, j%9] for j in possible_moves])
+        return actions
 
 def check_rows(little_board):
     a = (2 != little_board[0]== little_board[1]==little_board[2] !=0)
@@ -102,9 +116,9 @@ def change_player_state(playerturn):
     return(dic[playerturn])
 
     
-def flip_player(player_turn):
-    if player_turn == 1: return -1
-    elif player_turn == -1: return 1
-    elif player_turn=="X": return "O"
-    elif player_turn=="O": return "X"
+def flip_player(playerturn):
+    if playerturn == 1: return -1
+    elif playerturn == -1: return 1
+    elif playerturn=="X": return "O"
+    elif playerturn=="O": return "X"
     else: print("WTF")

@@ -2,5 +2,9 @@ import numpy as np
 from itertools import product
 import torch
 
-print(torch.cuda.is_available())
-print(torch.version.cuda)
+list = []
+
+if list:
+    print("True")
+else:
+    print("False")
