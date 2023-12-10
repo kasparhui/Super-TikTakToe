@@ -2,9 +2,6 @@ import numpy as np
 from itertools import product
 import torch
 
-list = []
+hallo = None
 
-if list:
-    print("True")
-else:
-    print("False")
+print(hallo is None)

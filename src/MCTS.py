@@ -51,13 +51,12 @@ class MonteCarloTreeSearch:
         best_score = -1
         best_child = None
         for child in node.children:
-            if child.is_terminal:
-                continue
             win_pct = (child.win_counts[node.game_state.playerturn] + child.win_counts[0]/2) / child.num_rollouts
             score = self.ucb_score(node.num_rollouts, child.num_rollouts, win_pct)
             if score > best_score:
                 best_score = score
                 best_child = child
+        
         return best_child
 
     def ucb_score(self, total_rollouts, node_rollouts, win_pct, bias_param=1): #bias_param=1.41
@@ -65,6 +64,8 @@ class MonteCarloTreeSearch:
         return win_pct + bias_param * math.sqrt(exploration)
 
     def expand(self, node):
+        if node.is_terminal:
+            return node
         random_choice = np.random.randint(len(node.unvisited_moves))
         move = node.unvisited_moves.pop(random_choice)
         next_game_state = copy.deepcopy(node.game_state)

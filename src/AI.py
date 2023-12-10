@@ -7,7 +7,7 @@ class all_AI:
         self.player = player
 
     def make_move(self, board, mode = 'random_move', depth = 3, smart_depth = 100):
-        self.board = copy.copy(board)
+        self.board = copy.deepcopy(board)
         if mode == 'random_move':
             return self.random_move()
         elif mode == 'best_move':
@@ -56,7 +56,8 @@ class all_AI:
 
 
     def best_move(self, depth, smart_depth):
-        position = self.minmax(self.player, depth, smart_depth)[1]
+        position = self.minmax(self.board.playerturn, depth, smart_depth)[1]
+        #print(self.board.board, self.board.playerturn)
         return position
 
     def random_move(self):

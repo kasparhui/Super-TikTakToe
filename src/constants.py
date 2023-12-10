@@ -1,5 +1,3 @@
-import os
-
 WIDTH = 729
 HEIGHT = 729
 tic_tac_toe_mapping = {'X': 1,'O': -1,'-': 0}
