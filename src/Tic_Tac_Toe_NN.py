@@ -107,7 +107,7 @@ class AlphaZero:
     def train_neural_net(self, dataset, epoch_start=0, epoch_stop=20, cpu=0):
         torch.manual_seed(cpu)
         cuda = torch.cuda.is_available()
-        cuda = False
+        #cuda = False
         self.model.train()
         criterion = AlphaLoss()
         optimizer = torch.optim.SGD(self.model.parameters(), lr=0.003)
@@ -164,7 +164,7 @@ if __name__ == "__main__":
  
 
     cuda = torch.cuda.is_available()
-    cuda = False
+    #cuda = False
     path = os.path.join('models', f'first_model_weights.pth')
 
     model = UltimateTicTacToeNet()
