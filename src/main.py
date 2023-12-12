@@ -47,10 +47,10 @@ def play_game(AI_mode=False, AI_mode2 = False, player_turn='X'):
                 if not move_was_made:
                     if ((initial_playerturn == player_turn) and (not AI_mode)) or ((initial_playerturn != player_turn) and (not AI_mode2)):
                         location = pygame.mouse.get_pos()
-                        big_COL = location[0]//(WIDTH//3)
-                        big_ROW = location[1]//(HEIGHT//3)
-                        col_pos = location[0] % (WIDTH //3)
-                        row_pos = location[1] % (HEIGHT //3)
+                        big_COL = location[1]//(WIDTH//3)
+                        big_ROW = location[0]//(HEIGHT//3)
+                        col_pos = location[1] % (WIDTH //3)
+                        row_pos = location[0] % (HEIGHT //3)
                         col = little_position(col_pos)
                         row = little_position(row_pos) 
                         if (col == None) or (row ==None):
@@ -109,9 +109,9 @@ def play_game(AI_mode=False, AI_mode2 = False, player_turn='X'):
         winLine = game.game_is_win(board.won_games)[1]
         drawGameState(screen, board)
         if winLine == 1 or winLine == 2 or winLine == 3:
-            pygame.draw.line(screen,'red',(0,(winLine-1)*HEIGHT//3+HEIGHT//6),(WIDTH,(winLine-1)*HEIGHT//3+HEIGHT//6),15)
+            pygame.draw.line(screen,'red',((winLine-1)*HEIGHT//3+HEIGHT//6),0,15,(WIDTH,(winLine-1)*HEIGHT//3+HEIGHT//6))
         elif winLine == 4 or winLine == 5 or winLine ==6:
-            pygame.draw.line(screen,'red',((winLine-4)*WIDTH//3+WIDTH//6,0),((winLine-4)*WIDTH//3+WIDTH//6,WIDTH),15)
+            pygame.draw.line(screen,'red',(0,(winLine-4)*WIDTH//3+WIDTH//6),(WIDTH,(winLine-4)*WIDTH//3+WIDTH//6),15)
         elif winLine == 7:
             pygame.draw.line(screen,'red',(0,0),(WIDTH,HEIGHT),20)
         elif winLine == 8:
@@ -127,4 +127,4 @@ def play_game(AI_mode=False, AI_mode2 = False, player_turn='X'):
 
 
 if __name__ == '__main__':
-    play_game(True, True, 'X')
+    play_game(False, False, 'X')

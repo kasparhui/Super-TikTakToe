@@ -21,6 +21,8 @@ class board:
         return False
     
     def execute(self,position):
+        if type(position) == int:
+            position = [position//9, position%9]
         self.board[position[0]][position[1]] = self.playerturn
         if game_is_win(self.board[position[0]])[0]:
             self.won_games[position[0]] = self.playerturn
@@ -61,6 +63,28 @@ class board:
             possible_moves = np.where(self.board[self.next_move] == 0)[0] + self.next_move * 9
         actions = np.array([[j//9, j%9] for j in possible_moves])
         return actions
+    
+    def possible_move_vector(self):
+        legal_moves = np.zeros((9, 9), dtype=np.int8)
+        if self.next_move == None:
+            for i in range(9):
+                if self.won_games[i] == 0:
+                    legal_moves[i, np.where(self.board[i] == 0)[0]] = 1
+        else:
+            legal_moves[self.next_move, np.where(self.board[self.next_move] == 0)[0]] = 1
+        return legal_moves
+    
+    def get_encoded_state(self):
+        possible_moves_board = np.zeros((9, 9))
+        possible_moves = self.possible_moves()
+        for i in possible_moves:
+            possible_moves_board[i[0]][i[1]] = 1
+        possible_moves_board = possible_moves_board.reshape(3, 3, 3, 3).transpose(0, 2, 1, 3).reshape(9, 9)
+        transposed_board = self.board.reshape(3, 3, 3, 3).transpose(0, 2, 1, 3).reshape(9, 9)
+        encoded_state = np.stack((transposed_board == -1, transposed_board == 0, transposed_board == 1, possible_moves_board), 
+        ).astype(np.float32)
+        return encoded_state
+
 
 def check_rows(little_board):
     a = (2 != little_board[0]== little_board[1]==little_board[2] !=0)

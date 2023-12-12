@@ -6,12 +6,12 @@ import os
 class ConvBlock(nn.Module):
     def __init__(self):
         super(ConvBlock, self).__init__()
-        self.conv1 = nn.Conv2d(2, 256, 3, stride=1, padding=1)
+        self.conv1 = nn.Conv2d(4, 256, 3, stride=1, padding=1)
         self.bn1 = nn.BatchNorm2d(256)
         self.activation = nn.ReLU()
 
     def forward(self, s):
-        s = s.view(-1, 2, 9, 9)  # batch_size x channels x board_x x board_y
+        s = s.view(-1, 4, 9, 9)  # batch_size x channels x board_x x board_y
         s = self.activation(self.bn1(self.conv1(s)))
 
         return s
@@ -175,13 +175,13 @@ if __name__ == "__main__":
     if os.path.exists(path):
         model.load_state_dict(torch.load(path))
         model.eval()
-    print(model(single_set[0]))
+    #print(model(single_set[0]))
     if cuda:
         model = model.cuda()
 
     TicTacToeZero = AlphaZero(model)
     start = time.time()
-    TicTacToeZero.train_neural_net([single_set]*500)
+    #TicTacToeZero.train_neural_net([single_set]*500)
     print('Zeit:', time.time()-start)
 
     if cuda:
@@ -189,4 +189,4 @@ if __name__ == "__main__":
     torch.save(model.state_dict(), path)
     print(f"Das trainierte Modell wurde unter '{path}' gespeichert.")
     
-    print(model(single_set[0]))
+    #print(model(single_set[0]))

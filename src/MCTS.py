@@ -3,6 +3,7 @@ import math
 import game
 import copy
 import constants
+import torch
 
 class Node:
     def __init__(self, game_state, parent=None, move=None):
@@ -25,10 +26,13 @@ class MonteCarloTreeSearch:
         self.root = node
 
     def best_move(self, iterations=10000):
-        for _ in range(iterations):
+        for count in range(iterations):
             leaf = self.traverse(self.root)
+            if count % 50 == 0:
+                print(count)
+                print(leaf is self.root)
             new_leaf = self.expand(leaf)
-            simulation_result = self.rollout(new_leaf)
+            simulation_result = (self.rollout(new_leaf) + 1) / 2
             self.backpropagate(new_leaf, simulation_result)
         return self.select_best_move(self.root)
 
@@ -80,8 +84,6 @@ class MonteCarloTreeSearch:
             possible_moves = current_rollout_state.possible_moves()
             action = self.rollout_policy(possible_moves)
             current_rollout_state.execute(action) 
-        #print(constants.arrange_array(current_rollout_state.board))
-        #print(current_rollout_state.won_games)
 
         if game.game_is_win(current_rollout_state.won_games)[0]:
             if current_rollout_state.playerturn == 1:
@@ -104,24 +106,107 @@ class MonteCarloTreeSearch:
         node.win_counts[result] += 1
         self.backpropagate(node.parent, result)
 
-if __name__ == '__main__':
+class AlphaNode:
+    def __init__(self, game_state, parent=None, move=None):
+        self.game_state = game_state
+        self.parent = parent
+        self.move = move
+        self.win_counts = 0
+        self.num_rollouts = 0
+        self.children = []
+        self.is_expanded = False
+        self.playerturn = game_state.playerturn
+        self.is_terminal = game_state.game_is_over
 
+class AlphaMonteCarloTreeSearch(MonteCarloTreeSearch):
+    def __init__(self, node, neural_network):
+        super().__init__(node)
+        self.neural_network = neural_network
+
+    def traverse(self, node):
+        while not node.is_terminal and node.is_expanded:
+            node = self.select(node)
+        return node
+
+    def select(self, node):
+        best_child = None
+        best_ucb = -np.inf
+        
+        for child in node.children:
+            ucb = self.ucb_score(child)
+            if ucb > best_ucb:
+                best_child = child
+                best_ucb = ucb
+                
+        return best_child
+    
+    def expand(self, node):
+        if node.is_terminal:
+            return node
+        #print((node.game_state.get_encoded_state()))
+        policy, value = self.neural_network(torch.tensor(node.game_state.get_encoded_state()))
+        policy = policy[0].detach().numpy()
+        policy = policy * node.game_state.possible_move_vector().reshape(-1)
+        policy = policy / np.sum(policy)
+        for action, prob in enumerate(policy):
+            #print(policy)
+            if prob > 0:
+                next_game_state = copy.deepcopy(node.game_state)
+                next_game_state.execute(action)
+                child_node = AlphaNode(next_game_state, node, action)
+                child_node.prior = prob
+                node.children.append(child_node)
+        node.value = value[0].detach().numpy()
+        node.is_expanded = True
+        return node
+
+    def ucb_score(self, child):
+        if child.num_rollouts == 0:
+            q_value = 0
+        else:
+            q_value = 1 - ((child.win_counts / child.num_rollouts) + 1) / 2
+        return q_value + 2 * (math.sqrt( child.parent.num_rollouts) / (child.num_rollouts + 1)) * child.prior
+    
+    def rollout(self, node):
+        return node.value  # In AlphaZero, the rollout step is replaced by the value output of the neural network
+    
+    def backpropagate(self, node, value_estimate):
+        if node is None:
+            return
+        node.num_rollouts += 1
+        node.win_counts += value_estimate
+        self.backpropagate(node.parent, value_estimate)
+
+    def select_best_move(self, node):
+        best_move = None
+        best_pct = -1.0
+        for child in node.children:
+            print(child.move)
+            if child.num_rollouts == 0:
+                print(child.win_counts, child.num_rollouts)
+            else:
+                print(child.win_counts, child.num_rollouts, child.win_counts / child.num_rollouts)
+        for child in node.children:
+            win_pct = child.win_counts / child.num_rollouts
+            if win_pct > best_pct:
+                best_pct = win_pct
+                best_move = child.move
+        return best_move, node
+    
+
+if __name__ == '__main__':
+    import Tic_Tac_Toe_NN
+    import os
+
+    path = os.path.join('models', f'first_model_weights.pth')
     board = game.board(np.zeros((9,9),dtype=np.int8), -1)
 
-    node = Node(board)
-    mcts = MonteCarloTreeSearch(node)
-    best_move = mcts.best_move()
+    node = AlphaNode(board)
+    model = Tic_Tac_Toe_NN.UltimateTicTacToeNet()
+    model.load_state_dict(torch.load(path))
+    model.eval()
+    mcts = AlphaMonteCarloTreeSearch(node, model)
+    best_move = mcts.best_move(200)
 
-    print(best_move[0])
 
-    for i in range(len(best_move[1].children)):
-        print(best_move[1].children[i].move, best_move[1].children[i].win_counts, best_move[1].children[i].num_rollouts)
-        if best_move[1].children[i].move == best_move[0]:
-            print('----', mcts.select_best_move(best_move[1].children[i])[0])
-            for j in range(9):
-                print('----', best_move[1].children[i].children[j].move, best_move[1].children[i].children[j].win_counts, best_move[1].children[i].children[j].num_rollouts)
-                if best_move[1].children[i].children[j].move == mcts.select_best_move(best_move[1].children[i])[0]:
-                    print('--------', mcts.select_best_move(best_move[1].children[i].children[j])[0])
-                    for k in range(9):
-                        print('--------', best_move[1].children[i].children[j].children[k].move, best_move[1].children[i].children[j].children[k].win_counts, best_move[1].children[i].children[j].children[k].num_rollouts)
         
