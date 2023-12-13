@@ -3,7 +3,7 @@ import random
 import numpy as np
 from constants import *
 class board:
-    def __init__(self,board, playerturn):
+    def __init__(self, board = np.zeros((9,9), dtype=np.int8), playerturn = 1):
         self.board = board
         self.next_move = None
         self.won_games = np.zeros(9,dtype=np.int8)
@@ -19,7 +19,7 @@ class board:
             elif self.next_move == position[0]:
                 return True
         return False
-    
+
     def execute(self,position):
         if type(position) == int:
             position = [position//9, position%9]
@@ -84,6 +84,15 @@ class board:
         encoded_state = np.stack((transposed_board == -1, transposed_board == 0, transposed_board == 1, possible_moves_board), 
         ).astype(np.float32)
         return encoded_state
+    
+    def change_perspective(self):
+        if self.playerturn == 1:
+            return
+        else:
+            self.board = -self.board
+            self.won_games = -self.won_games
+            self.playerturn = flip_player(self.playerturn)
+            return
 
 
 def check_rows(little_board):
@@ -141,8 +150,4 @@ def change_player_state(playerturn):
 
     
 def flip_player(playerturn):
-    if playerturn == 1: return -1
-    elif playerturn == -1: return 1
-    elif playerturn=="X": return "O"
-    elif playerturn=="O": return "X"
-    else: print("WTF")
+    return -playerturn

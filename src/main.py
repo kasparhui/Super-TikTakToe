@@ -34,7 +34,7 @@ def play_game(AI_mode=False, AI_mode2 = False, player_turn='X'):
             if (player_turn == initial_playerturn) and AI_mode:
                 position = AI.make_move(board,'best_move',depth = 5, smart_depth= 25)
                 board.execute(position)
-                player_turn=game.flip_player(player_turn)
+                player_turn=short_mapping[player_turn]
                 board.last_move = position
                 move_was_made = True
                 print('best_move AI', game.flip_player(board.playerturn), position)
@@ -58,7 +58,7 @@ def play_game(AI_mode=False, AI_mode2 = False, player_turn='X'):
                         position = (3*big_COL + big_ROW, 3*col + row)
                         if board.is_valid_move(position):
                             board.execute(position)
-                            player_turn=game.flip_player(player_turn)
+                            player_turn=short_mapping[player_turn]
                             board.last_move = position
                             move_was_made = True
             if e.type == pygame.KEYDOWN:
@@ -70,18 +70,18 @@ def play_game(AI_mode=False, AI_mode2 = False, player_turn='X'):
                     else:
                         if board.log != []:
                             board.undo_move()
-                            player_turn=game.flip_player(player_turn)
+                            player_turn=short_mapping[player_turn]
         if not move_was_made:
             if (player_turn != initial_playerturn) and AI_mode2:
                 position = AI.make_move(board,'naiv_MCTC', depth = 5, smart_depth= 25)
                 board.execute(position)
-                player_turn=game.flip_player(player_turn)
+                player_turn=short_mapping[player_turn]
                 board.last_move = position
                 move_was_made = True
 
         if board.game_is_over: 
             if game.game_is_win(board.won_games)[0]: 
-                string = f'Spieler {game.flip_player(player_turn)} hat gewonnen!'
+                string = f'Spieler {short_mapping[player_turn]} hat gewonnen!'
             elif game.game_is_tie(board.won_games): 
                 string = f'Unentschieden!'
             board.next_move = -1

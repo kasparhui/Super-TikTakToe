@@ -29,7 +29,7 @@ class MonteCarloTreeSearch:
         self.root = node
         for count in range(iterations):
             leaf = self.traverse(self.root)
-            if count % 50 == 0:
+            if count % 99 == 0 and count != 0:
                 print(count)
                 #print(leaf is self.root)
             new_leaf = self.expand(leaf)
@@ -166,7 +166,10 @@ class AlphaMonteCarloTreeSearch(MonteCarloTreeSearch):
         if child.num_rollouts == 0:
             q_value = 0
         else:
-            q_value = 1 - (child.win_counts / child.num_rollouts)
+            if child.game_state.playerturn == -1:
+                q_value = 1 - (child.win_counts / child.num_rollouts)  # win rate of opponent
+            else:
+                q_value = child.win_counts / child.num_rollouts  # win rate of current player
         return q_value + 2 * (math.sqrt( child.parent.num_rollouts) / (child.num_rollouts + 1)) * child.prior
     
     def rollout(self, node):
@@ -184,7 +187,7 @@ class AlphaMonteCarloTreeSearch(MonteCarloTreeSearch):
         for child in node.children:
             action_probs[child.move] = child.num_rollouts
         action_probs = action_probs / np.sum(action_probs)
-        return action_probs, node
+        return action_probs
     
 
 if __name__ == '__main__':

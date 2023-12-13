@@ -3,6 +3,10 @@ import torch
 import torch.nn as nn
 import os
 import MCTS
+import game
+import copy
+
+
 class ConvBlock(nn.Module):
     def __init__(self):
         super(ConvBlock, self).__init__()
@@ -100,20 +104,43 @@ class AlphaZero:
     def __init__(self, model):
         # Initialisiere Parameter für das Training
         self.model = model
-    def self_play(self, game, neural_net):
+
+    def self_play(self):
         # Führe Selbstspiele durch, um Daten für das Training zu generieren
-        pass
+        memory = []
+        playerturn = -1 
+        state = game.board(playerturn=playerturn)
+        while True:
+            neutral_state = copy.deepcopy(state)
+            neutral_state.change_perspective()
+            node  = MCTS.AlphaNode(neutral_state)
+            mcts = MCTS.AlphaMonteCarloTreeSearch(self.model)
+            action_probs = mcts.best_move(node, 100)
+                
+            memory.append((neutral_state.get_encoded_state(), action_probs, playerturn))
+                
+            action = np.random.choice(81, p=action_probs)
+                
+            state.execute(action)
+                
+            if state.game_is_over:
+                if game.game_is_win(state.won_games)[0]:
+                    value = playerturn
+                else: value = 0
+                for i in range(len(memory)):
+                    memory[i][2]*= value
+                return memory
 
     def train_neural_net(self, dataset, epoch_start=0, epoch_stop=20, cpu=0):
         torch.manual_seed(cpu)
         cuda = torch.cuda.is_available()
-        #cuda = False
+        cuda = False
         #self.model.train()
         criterion = AlphaLoss()
         optimizer = torch.optim.SGD(self.model.parameters(), lr=0.003)
         scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[100, 200, 300, 400], gamma=0.2)
 
-        train_loader = DataLoader(dataset, batch_size=10, shuffle=True, num_workers=0, pin_memory=False)
+        train_loader = DataLoader(dataset, batch_size=5, shuffle=True, num_workers=0, pin_memory=False)
         losses_per_epoch = []
 
         for epoch in range(epoch_start, epoch_stop):
@@ -152,16 +179,17 @@ class AlphaZero:
             scheduler.step()
         print(losses_per_epoch)
 
-    def learn(self, iterations = 100):
+    def learn(self, iterations = 1):
         # Führe das Training durch
         for iteration in range(iterations):
             memory = []
             self.model.eval()
-            for self_play_iteration in range(100):
+            for self_play_iteration in range(1):
                 memory += self.self_play()
             self.model.train()
             self.train_neural_net(memory,0,20)
         torch.save(self.model.state_dict(), os.path.join('models', f'first_model_weights.pth'))
+        torch.save(self.optimizer.state_dict(), os.path.join('optimizer', f'first_model_weights_{iterations}.pth'))
 # Beispiel für die Verwendung
 if __name__ == "__main__":
     # Beispiel für die Nutzung der implementierten Klassen
@@ -174,14 +202,14 @@ if __name__ == "__main__":
     import time
  
 
+
+
+
     cuda = torch.cuda.is_available()
-    #cuda = False
+    cuda = False
     path = os.path.join('models', f'first_model_weights.pth')
 
     model = UltimateTicTacToeNet()
-
-    dataset = datasets.CustomDataset(1)
-    single_set = dataset.__getitem__(1)
 
     if os.path.exists(path):
         model.load_state_dict(torch.load(path))
@@ -191,6 +219,11 @@ if __name__ == "__main__":
         model = model.cuda()
 
     TicTacToeZero = AlphaZero(model)
+
+    TicTacToeZero.learn(1)
+
+
+    '''
     start = time.time()
     #TicTacToeZero.train_neural_net([single_set]*500)
     print('Zeit:', time.time()-start)
@@ -201,3 +234,4 @@ if __name__ == "__main__":
     print(f"Das trainierte Modell wurde unter '{path}' gespeichert.")
     
     #print(model(single_set[0]))
+    '''
