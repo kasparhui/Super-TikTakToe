@@ -2,7 +2,7 @@
 import torch
 import torch.nn as nn
 import os
-
+import MCTS
 class ConvBlock(nn.Module):
     def __init__(self):
         super(ConvBlock, self).__init__()
@@ -108,12 +108,12 @@ class AlphaZero:
         torch.manual_seed(cpu)
         cuda = torch.cuda.is_available()
         #cuda = False
-        self.model.train()
+        #self.model.train()
         criterion = AlphaLoss()
         optimizer = torch.optim.SGD(self.model.parameters(), lr=0.003)
         scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[100, 200, 300, 400], gamma=0.2)
 
-        train_loader = DataLoader(dataset, batch_size=50, shuffle=True, num_workers=0, pin_memory=False)
+        train_loader = DataLoader(dataset, batch_size=10, shuffle=True, num_workers=0, pin_memory=False)
         losses_per_epoch = []
 
         for epoch in range(epoch_start, epoch_stop):
@@ -151,10 +151,21 @@ class AlphaZero:
                     break
             scheduler.step()
         print(losses_per_epoch)
+
+    def learn(self, iterations = 100):
+        # Führe das Training durch
+        for iteration in range(iterations):
+            memory = []
+            self.model.eval()
+            for self_play_iteration in range(100):
+                memory += self.self_play()
+            self.model.train()
+            self.train_neural_net(memory,0,20)
+        torch.save(self.model.state_dict(), os.path.join('models', f'first_model_weights.pth'))
 # Beispiel für die Verwendung
 if __name__ == "__main__":
     # Beispiel für die Nutzung der implementierten Klassen
-    import game
+    import game  
     import numpy as np
     import AI
     import time

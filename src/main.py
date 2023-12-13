@@ -109,7 +109,7 @@ def play_game(AI_mode=False, AI_mode2 = False, player_turn='X'):
         winLine = game.game_is_win(board.won_games)[1]
         drawGameState(screen, board)
         if winLine == 1 or winLine == 2 or winLine == 3:
-            pygame.draw.line(screen,'red',((winLine-1)*HEIGHT//3+HEIGHT//6),0,15,(WIDTH,(winLine-1)*HEIGHT//3+HEIGHT//6))
+            pygame.draw.line(screen,'red',((winLine-1)*HEIGHT//3+HEIGHT//6,0),(15,(WIDTH,(winLine-1)*HEIGHT//3+HEIGHT//6)))
         elif winLine == 4 or winLine == 5 or winLine ==6:
             pygame.draw.line(screen,'red',(0,(winLine-4)*WIDTH//3+WIDTH//6),(WIDTH,(winLine-4)*WIDTH//3+WIDTH//6),15)
         elif winLine == 7:
@@ -127,4 +127,4 @@ def play_game(AI_mode=False, AI_mode2 = False, player_turn='X'):
 
 
 if __name__ == '__main__':
-    play_game(False, False, 'X')
+    play_game(True, True, 'X')

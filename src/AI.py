@@ -66,8 +66,8 @@ class all_AI:
     
     def naiv_MCTC(self, iterations = 1000):
         node = MCTS.Node(self.board)
-        mcts = MCTS.MonteCarloTreeSearch(node)
-        best_move = mcts.best_move(iterations)
+        mcts = MCTS.MonteCarloTreeSearch()
+        best_move = mcts.best_move(node, iterations)
         return best_move[0]
 
     def possible_moves(self):
@@ -75,11 +75,12 @@ class all_AI:
         return self.board.possible_moves()
 
     def minmax(self, playerturn, depth, smart_depth):
-        if check_if_game_over(self.board.won_games):
-            if game_is_win(self.board.won_games)[0]:
-                return flip_player(playerturn), None
-            elif game_is_tie(self.board.won_games)[0]:
-                return 0, None
+        if self.board.game_is_over:
+            if check_if_game_over(self.board.won_games):
+                if game_is_win(self.board.won_games)[0]:
+                    return flip_player(playerturn), None
+                elif game_is_tie(self.board.won_games)[0]:
+                    return 0, None
         if depth ==1:
             return self.get_evalution(), None
         actions = self.possible_moves()

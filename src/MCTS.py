@@ -22,17 +22,18 @@ class Node:
         self.is_terminal = game_state.game_is_over
 
 class MonteCarloTreeSearch:
-    def __init__(self, node):
-        self.root = node
+    def __init__(self):
+        pass
 
-    def best_move(self, iterations=10000):
+    def best_move(self, node, iterations=10000):
+        self.root = node
         for count in range(iterations):
             leaf = self.traverse(self.root)
             if count % 50 == 0:
                 print(count)
-                print(leaf is self.root)
+                #print(leaf is self.root)
             new_leaf = self.expand(leaf)
-            simulation_result = (self.rollout(new_leaf) + 1) / 2
+            simulation_result = self.rollout(new_leaf)
             self.backpropagate(new_leaf, simulation_result)
         return self.select_best_move(self.root)
 
@@ -119,8 +120,8 @@ class AlphaNode:
         self.is_terminal = game_state.game_is_over
 
 class AlphaMonteCarloTreeSearch(MonteCarloTreeSearch):
-    def __init__(self, node, neural_network):
-        super().__init__(node)
+    def __init__(self, neural_network):
+        super().__init__()
         self.neural_network = neural_network
 
     def traverse(self, node):
@@ -148,6 +149,7 @@ class AlphaMonteCarloTreeSearch(MonteCarloTreeSearch):
         policy = policy[0].detach().numpy()
         policy = policy * node.game_state.possible_move_vector().reshape(-1)
         policy = policy / np.sum(policy)
+        #print(policy)
         for action, prob in enumerate(policy):
             #print(policy)
             if prob > 0:
@@ -164,11 +166,11 @@ class AlphaMonteCarloTreeSearch(MonteCarloTreeSearch):
         if child.num_rollouts == 0:
             q_value = 0
         else:
-            q_value = 1 - ((child.win_counts / child.num_rollouts) + 1) / 2
+            q_value = 1 - (child.win_counts / child.num_rollouts)
         return q_value + 2 * (math.sqrt( child.parent.num_rollouts) / (child.num_rollouts + 1)) * child.prior
     
     def rollout(self, node):
-        return node.value  # In AlphaZero, the rollout step is replaced by the value output of the neural network
+        return (node.value + 1) / 2  # In AlphaZero, the rollout step is replaced by the value output of the neural network
     
     def backpropagate(self, node, value_estimate):
         if node is None:
@@ -178,20 +180,11 @@ class AlphaMonteCarloTreeSearch(MonteCarloTreeSearch):
         self.backpropagate(node.parent, value_estimate)
 
     def select_best_move(self, node):
-        best_move = None
-        best_pct = -1.0
+        action_probs = np.zeros(81)
         for child in node.children:
-            print(child.move)
-            if child.num_rollouts == 0:
-                print(child.win_counts, child.num_rollouts)
-            else:
-                print(child.win_counts, child.num_rollouts, child.win_counts / child.num_rollouts)
-        for child in node.children:
-            win_pct = child.win_counts / child.num_rollouts
-            if win_pct > best_pct:
-                best_pct = win_pct
-                best_move = child.move
-        return best_move, node
+            action_probs[child.move] = child.num_rollouts
+        action_probs = action_probs / np.sum(action_probs)
+        return action_probs, node
     
 
 if __name__ == '__main__':
@@ -200,13 +193,14 @@ if __name__ == '__main__':
 
     path = os.path.join('models', f'first_model_weights.pth')
     board = game.board(np.zeros((9,9),dtype=np.int8), -1)
-
+    board.execute((4,4))
     node = AlphaNode(board)
     model = Tic_Tac_Toe_NN.UltimateTicTacToeNet()
     model.load_state_dict(torch.load(path))
     model.eval()
-    mcts = AlphaMonteCarloTreeSearch(node, model)
-    best_move = mcts.best_move(200)
+    mcts = AlphaMonteCarloTreeSearch(model)
+    best_move = mcts.best_move(node, 300)
+    print(best_move)
 
 
         
