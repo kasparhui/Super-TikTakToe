@@ -2,9 +2,11 @@ import copy
 import random
 import numpy as np
 from constants import *
-class board:
+
+ 
+class Board:
     def __init__(self, board = np.zeros((9,9), dtype=np.int8), playerturn = 1):
-        self.board = board
+        self.board = copy.deepcopy(board)
         self.next_move = None
         self.won_games = np.zeros(9,dtype=np.int8)
         self.log = []
@@ -75,55 +77,62 @@ class board:
         return legal_moves
     
     def get_encoded_state(self):
+        # Set a one on the board where the player can play a legal move
         possible_moves_board = np.zeros((9, 9))
         possible_moves = self.possible_moves()
-        for i in possible_moves:
-            possible_moves_board[i[0]][i[1]] = 1
+        for x, y in possible_moves:
+            possible_moves_board[x][y] = 1
         possible_moves_board = possible_moves_board.reshape(3, 3, 3, 3).transpose(0, 2, 1, 3).reshape(9, 9)
+        
+        # Encode the board
         transposed_board = self.board.reshape(3, 3, 3, 3).transpose(0, 2, 1, 3).reshape(9, 9)
-        encoded_state = np.stack((transposed_board == -1, transposed_board == 0, transposed_board == 1, possible_moves_board), 
-        ).astype(np.float32)
+        
+        encoded_state = np.stack((
+            transposed_board == -1, 
+            transposed_board == 0, 
+            transposed_board == 1, 
+            possible_moves_board
+        )).astype(np.float32)
         return encoded_state
     
     def change_perspective(self):
         if self.playerturn == 1:
             return
-        else:
-            self.board = -self.board
-            self.won_games = -self.won_games
-            self.playerturn = flip_player(self.playerturn)
-            return
-
+        
+        self.board = -self.board
+        self.won_games = -self.won_games
+        self.playerturn = flip_player(self.playerturn)
 
 def check_rows(little_board):
-    a = (2 != little_board[0]== little_board[1]==little_board[2] !=0)
-    b = (2 != little_board[3]==little_board[4]==little_board[5] !=0) 
-    c = (2 != little_board[6]==little_board[7]==little_board[8] !=0)
-    if a: return True, 4
-    elif b: return True, 5
-    elif c: return True, 6
-    else: return False, -1
+    first_row = (2 != little_board[0] == little_board[1] == little_board[2] != 0)
+    second_row = (2 != little_board[3] == little_board[4] == little_board[5] != 0) 
+    third_row = (2 != little_board[6] == little_board[7] == little_board[8] != 0)
+    
+    won = first_row or second_row or third_row
+    row = 4 if first_row else 5 if second_row else 6 if third_row else -1
+    return won, row
 
 def check_column(little_board):
-    a = (2 != little_board[0]==little_board[3]==little_board[6]!=0)
-    b = (2 != little_board[1]==little_board[4]==little_board[7]!=0) 
-    c = (2 != little_board[2]==little_board[5]==little_board[8]!=0)
-    if a: return True, 1
-    elif b: return True, 2
-    elif c: return True, 3
-    else: return False, -1
+    first_column = (2 != little_board[0] == little_board[3] == little_board[6] != 0)
+    second_column = (2 != little_board[1] == little_board[4] == little_board[7] != 0) 
+    third_column = (2 != little_board[2] == little_board[5] == little_board[8] != 0)
+    
+    won = first_column or second_column or third_column
+    column = 1 if first_column else 2 if second_column else 3 if third_column else -1
+    return won, column
 
 def check_diagonal(little_board):
-    a = (2 != little_board[0]==little_board[4]==little_board[8]!=0) 
-    b = (2 != little_board[2]==little_board[4]==little_board[6]!=0)
-    if a: return True, 7
-    elif b: return True, 8
-    else: return False, -1
+    top_left_to_bottom_right = (2 != little_board[0]==little_board[4]==little_board[8]!=0) 
+    top_right_to_bottom_left = (2 != little_board[2]==little_board[4]==little_board[6]!=0)
+    
+    won = top_left_to_bottom_right or top_right_to_bottom_left
+    diagonal = 7 if top_left_to_bottom_right else 8 if top_right_to_bottom_left else -1
+    return won, diagonal
 
 def game_is_tie(little_board):
     for i in little_board:
         if i==0: return False, -1
-    else: return True, 0
+    return True, 0
 
 def game_is_win(little_board):
     row_winner=check_rows(little_board)

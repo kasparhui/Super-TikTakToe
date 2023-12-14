@@ -29,8 +29,8 @@ class MonteCarloTreeSearch:
         self.root = node
         for count in range(iterations):
             leaf = self.traverse(self.root)
-            if count % 99 == 0 and count != 0:
-                print(count)
+            #if count % 99 == 0 and count != 0:
+                #print(count)
                 #print(leaf is self.root)
             new_leaf = self.expand(leaf)
             simulation_result = self.rollout(new_leaf)
@@ -118,6 +118,11 @@ class AlphaNode:
         self.is_expanded = False
         self.playerturn = game_state.playerturn
         self.is_terminal = game_state.game_is_over
+        if self.is_terminal:
+            if game.game_is_win(game_state.won_games)[0]:
+                self.value = - game_state.playerturn
+            else:
+                self.value = 0
 
 class AlphaMonteCarloTreeSearch(MonteCarloTreeSearch):
     def __init__(self, neural_network):
@@ -195,7 +200,7 @@ if __name__ == '__main__':
     import os
 
     path = os.path.join('models', f'first_model_weights.pth')
-    board = game.board(np.zeros((9,9),dtype=np.int8), -1)
+    board = game.Board(np.zeros((9,9),dtype=np.int8), -1)
     board.execute((4,4))
     node = AlphaNode(board)
     model = Tic_Tac_Toe_NN.UltimateTicTacToeNet()

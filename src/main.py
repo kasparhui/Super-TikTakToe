@@ -24,7 +24,7 @@ def play_game(AI_mode=False, AI_mode2 = False, player_turn='X'):
     clock = pygame.time.Clock()
     font = pygame.font.Font(None, 80)
     running = True
-    board = game.board(np.zeros((9,9),dtype=np.int8), tic_tac_toe_mapping[player_turn])
+    board = game.Board(np.zeros((9,9),dtype=np.int8), tic_tac_toe_mapping[player_turn])
     AI = all_AI(tic_tac_toe_mapping[player_turn])
     AI.board = board
     initial_playerturn = player_turn
@@ -32,7 +32,7 @@ def play_game(AI_mode=False, AI_mode2 = False, player_turn='X'):
     while running:
         if not move_was_made:
             if (player_turn == initial_playerturn) and AI_mode:
-                position = AI.make_move(board,'best_move',depth = 5, smart_depth= 25)
+                position = AI.make_move(board,'best_nn_move',depth = 5, smart_depth= 25)
                 board.execute(position)
                 player_turn=short_mapping[player_turn]
                 board.last_move = position
@@ -109,7 +109,7 @@ def play_game(AI_mode=False, AI_mode2 = False, player_turn='X'):
         winLine = game.game_is_win(board.won_games)[1]
         drawGameState(screen, board)
         if winLine == 1 or winLine == 2 or winLine == 3:
-            pygame.draw.line(screen,'red',((winLine-1)*HEIGHT//3+HEIGHT//6,0),(15,(WIDTH,(winLine-1)*HEIGHT//3+HEIGHT//6)))
+            pygame.draw.line(screen,'red',((winLine-1)*HEIGHT//3+HEIGHT//6,0),(((winLine-1)*HEIGHT//3+HEIGHT//6), WIDTH),15)
         elif winLine == 4 or winLine == 5 or winLine ==6:
             pygame.draw.line(screen,'red',(0,(winLine-4)*WIDTH//3+WIDTH//6),(WIDTH,(winLine-4)*WIDTH//3+WIDTH//6),15)
         elif winLine == 7:
@@ -127,4 +127,4 @@ def play_game(AI_mode=False, AI_mode2 = False, player_turn='X'):
 
 
 if __name__ == '__main__':
-    play_game(True, True, 'X')
+    play_game(False, False, 'X')
