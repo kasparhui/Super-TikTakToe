@@ -136,7 +136,6 @@ class AlphaZero:
                     #print(state.won_games)
                     value = 0
                 print('value:', value)
-                print(state.won_games)
                 for i in range(len(memory)):
                     memory[i][2]*= value
                 return memory
@@ -208,8 +207,8 @@ class AlphaZero:
             except KeyboardInterrupt:
                 print('KeyboardInterrupt')
                 break
-            except any:
-                print('Error')
+            except Exception as e:
+                print('Error:', str(e))
                 break
             print(f'finito iteration {iteration}')
         torch.save(self.model.state_dict(), os.path.join('models', 'neural_net', f'first_model_weights.pth'))
