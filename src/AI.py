@@ -26,9 +26,10 @@ class all_AI:
         model = Tic_Tac_Toe_NN.UltimateTicTacToeNet()
         model.load_state_dict(torch.load(os.path.join('models', 'neural_net',f'first_model_weights.pth')))
         model.eval()
+        self.board.change_perspective()
         Node = MCTS.AlphaNode(self.board)
         mcts = MCTS.AlphaMonteCarloTreeSearch(model)
-        probabiltys = mcts.best_move(Node, 100)
+        probabiltys = mcts.best_move(Node, 100)[0]
         best_move = np.argmax(probabiltys).item()
         print(best_move // 9, best_move % 9)
         return best_move // 9, best_move % 9

@@ -127,4 +127,4 @@ def play_game(AI_mode=False, AI_mode2 = False, player_turn='X'):
 
 
 if __name__ == '__main__':
-    play_game(False, False, 'X')
+    play_game(True, False, 'X')

@@ -116,26 +116,27 @@ class AlphaZero:
     def self_play(self):
         # Führe Selbstspiele durch, um Daten für das Training zu generieren
         memory = []
-        playerturn = -1 
+        playerturn = 1
         state = game.Board(playerturn=playerturn)
         while True:
             neutral_state = copy.deepcopy(state)
             neutral_state.change_perspective()
             node  = MCTS.AlphaNode(neutral_state)
             mcts = MCTS.AlphaMonteCarloTreeSearch(self.model)
-            action_probs = mcts.best_move(node, 100)
-                
-            memory.append([neutral_state.get_encoded_state(), action_probs, playerturn])
-                
+            action_probs = mcts.best_move(node, 164)[0]
+            memory.append([neutral_state.get_encoded_state(), torch.tensor(action_probs), torch.tensor(state.playerturn)])         
             action = np.random.choice(81, p=action_probs)
-                
+            
             state.execute(action)
             #print(state.won_games)
             if state.game_is_over:
                 if game.game_is_win(state.won_games)[0]:
-                    value = playerturn
-                else: value = 0
+                    value = - state.playerturn
+                else: 
+                    #print(state.won_games)
+                    value = 0
                 print('value:', value)
+                print(state.won_games)
                 for i in range(len(memory)):
                     memory[i][2]*= value
                 return memory
@@ -144,7 +145,6 @@ class AlphaZero:
         torch.manual_seed(cpu)
         cuda = torch.cuda.is_available()
         cuda = False
-        #self.model.train()
         criterion = AlphaLoss()
         optimizer = self.optimizer
         scheduler = self.scheduler
@@ -191,18 +191,25 @@ class AlphaZero:
     def learn(self, iterations = 5):
         # Führe das Training durch
         for iteration in range(iterations):
-            print(iteration)
+            print('iteraton:',iteration)
             try:
                 #self.model.load_state_dict(torch.load(os.path.join('models', 'neural_net',f'first_model_weights.pth')))
                 memory = []
                 self.model.eval()
-                for self_play_iteration in range(1):
-                    memory += self.self_play()
+                for self_play_iteration in range(3):
+                    new_data = self.self_play()
+                    if new_data is not None:
+                        memory += new_data
+                    else:
+                        print('Errorm Data is None')
                 self.model.train()
                 print(f'train iteration {iteration}')
-                self.train_neural_net(memory,0,5 )
+                self.train_neural_net(memory,0,10)
             except KeyboardInterrupt:
                 print('KeyboardInterrupt')
+                break
+            except any:
+                print('Error')
                 break
             print(f'finito iteration {iteration}')
         torch.save(self.model.state_dict(), os.path.join('models', 'neural_net', f'first_model_weights.pth'))
@@ -224,10 +231,12 @@ if __name__ == "__main__":
     cuda = False
 
     model = UltimateTicTacToeNet()
-    #print(model(single_set[0]))
     if cuda:
         model = model.cuda()
-
     TicTacToeZero = AlphaZero(model)
 
-    TicTacToeZero.learn(5)
+    TicTacToeZero.learn(100)
+
+    torch.save(TicTacToeZero.model.state_dict(), os.path.join('models', 'neural_net', f'first_model_weights.pth'))
+
+    

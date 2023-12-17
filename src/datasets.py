@@ -1,5 +1,7 @@
 import torch
 from torch.utils.data import Dataset
+import game
+import numpy as np
 
 class CustomDataset(Dataset):
     def __init__(self, size):
@@ -8,17 +10,46 @@ class CustomDataset(Dataset):
         return self.size
 
     def __getitem__(self, idx):
-        state = torch.zeros(2, 9, 9)  # Erstelle ein leeres 9x9 Array
-        state[0][1][4] = 1  # Setze den State bei (1, 4) auf 1
-        state[1, 3:6, 3:6] = 1
+        Game = game.Board()
+        if idx == 0:
+            state = Game.get_encoded_state()
 
-        policy = torch.zeros(9, 9)  # Erstelle ein leeres 9x9 Policy-Array
-        policy[[3, 5, 5, 3], [3, 3, 5, 5]] = 0.1  # Setze die Policy für [3,3], [3,5],[5,3],[5,5] auf 0.1
-        policy[[3, 4, 4, 5], [4, 3, 5, 4]] = 0.05  # Setze die Policy für [3,4], [4,3],[4,5],[5,4] auf 0.05
-        policy[4][4] = 0.4  # Setze die Policy bei [4,4] auf 0.4
-        policy = policy.view(-1)
-        value = torch.tensor([0.5])  # Setze den Value auf 1
+            policy = np.zeros(81)  # Erstelle ein leeres 9x9 Policy-Array
+            for i in range(81):
+                policy[i] = i/3321  + 1/3321
+            policy = torch.tensor(policy)
 
-        return [state, policy, value]
+            value = 0.5  # Setze den Value auf 1
+            value = torch.tensor(value)
+
+        elif idx ==1:
+            Game.execute(20)
+            Game.change_perspective()
+            state = Game.get_encoded_state()
+            policy = np.zeros(81)  # Erstelle ein leeres 9x9 Policy-Array
+            for i in range(81):
+                policy[i] = i/3321  + 1/3321
+            policy = torch.tensor(policy)
+
+            value = -0.7  # Setze den Value auf 1
+            value = torch.tensor(value)
+
+        elif idx ==2:
+            Game.execute(60)
+            Game.change_perspective()
+            state = Game.get_encoded_state()
+            policy = np.zeros(81)  # Erstelle ein leeres 9x9 Policy-Array
+            for i in range(81):
+                policy[i] = i/3321  + 1/3321
+            policy = torch.tensor(policy)
+
+            value = 0.7  # Setze den Value auf 1
+            value = torch.tensor(value)
+
+        return [state, policy, value]    
+
+if __name__ == '__main__':
+    dataset = CustomDataset(1)
+    dataset[0]
 
 

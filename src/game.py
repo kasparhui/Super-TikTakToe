@@ -2,7 +2,7 @@ import copy
 import random
 import numpy as np
 from constants import *
-
+from torch import tensor, float32
  
 class Board:
     def __init__(self, board = np.zeros((9,9), dtype=np.int8), playerturn = 1):
@@ -87,12 +87,22 @@ class Board:
         # Encode the board
         transposed_board = self.board.reshape(3, 3, 3, 3).transpose(0, 2, 1, 3).reshape(9, 9)
         
-        encoded_state = np.stack((
-            transposed_board == -1, 
-            transposed_board == 0, 
-            transposed_board == 1, 
-            possible_moves_board
-        )).astype(np.float32)
+        if self.playerturn == 1:
+            encoded_state = np.stack((
+                transposed_board == 1, 
+                transposed_board == 0, 
+                transposed_board == -1, 
+                possible_moves_board
+            )).astype(np.float32)
+        else:
+            encoded_state = np.stack((
+                transposed_board == -1, 
+                transposed_board == 0, 
+                transposed_board == 1, 
+                possible_moves_board
+            )).astype(np.float32)
+
+        encoded_state = tensor(encoded_state, dtype=float32)
         return encoded_state
     
     def change_perspective(self):
@@ -101,6 +111,7 @@ class Board:
         
         self.board = -self.board
         self.won_games = -self.won_games
+        self.won_games = np.where(self.won_games == -2 , 2 , self.won_games)
         self.playerturn = flip_player(self.playerturn)
 
 def check_rows(little_board):

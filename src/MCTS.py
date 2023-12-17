@@ -25,7 +25,7 @@ class MonteCarloTreeSearch:
     def __init__(self):
         pass
 
-    def best_move(self, node, iterations=10000):
+    def best_move(self, node, iterations=300):
         self.root = node
         for count in range(iterations):
             leaf = self.traverse(self.root)
@@ -120,7 +120,7 @@ class AlphaNode:
         self.is_terminal = game_state.game_is_over
         if self.is_terminal:
             if game.game_is_win(game_state.won_games)[0]:
-                self.value = - game_state.playerturn
+                self.value = game_state.playerturn
             else:
                 self.value = 0
 
@@ -150,7 +150,7 @@ class AlphaMonteCarloTreeSearch(MonteCarloTreeSearch):
         if node.is_terminal:
             return node
         #print((node.game_state.get_encoded_state()))
-        policy, value = self.neural_network(torch.tensor(node.game_state.get_encoded_state()))
+        policy, value = self.neural_network(node.game_state.get_encoded_state())
         policy = policy[0].detach().numpy()
         policy = policy * node.game_state.possible_move_vector().reshape(-1)
         policy = policy / np.sum(policy)
@@ -163,18 +163,18 @@ class AlphaMonteCarloTreeSearch(MonteCarloTreeSearch):
                 child_node = AlphaNode(next_game_state, node, action)
                 child_node.prior = prob
                 node.children.append(child_node)
-        node.value = value[0].detach().numpy()
+        if node.playerturn == 1:
+            node.value = value[0].detach().numpy()
+        else :
+            node.value = - value[0].detach().numpy()
         node.is_expanded = True
         return node
 
     def ucb_score(self, child):
         if child.num_rollouts == 0:
-            q_value = 0
+            q_value = 0.5
         else:
-            if child.game_state.playerturn == -1:
-                q_value = 1 - (child.win_counts / child.num_rollouts)  # win rate of opponent
-            else:
-                q_value = child.win_counts / child.num_rollouts  # win rate of current player
+            q_value = 1 - (child.win_counts / child.num_rollouts)  
         return q_value + 2 * (math.sqrt( child.parent.num_rollouts) / (child.num_rollouts + 1)) * child.prior
     
     def rollout(self, node):
@@ -184,31 +184,36 @@ class AlphaMonteCarloTreeSearch(MonteCarloTreeSearch):
         if node is None:
             return
         node.num_rollouts += 1
-        node.win_counts += value_estimate
+        node.win_counts += (value_estimate)
+        value_estimate = 1 - value_estimate
         self.backpropagate(node.parent, value_estimate)
 
     def select_best_move(self, node):
         action_probs = np.zeros(81)
         for child in node.children:
-            action_probs[child.move] = child.num_rollouts
+            if child.num_rollouts > 0:
+                action_probs[child.move] = 1 - (child.win_counts / child.num_rollouts)
+            else:
+                action_probs[child.move] = 0
         action_probs = action_probs / np.sum(action_probs)
-        return action_probs
+        return action_probs, node
     
 
 if __name__ == '__main__':
     import Tic_Tac_Toe_NN
     import os
 
-    path = os.path.join('models', f'first_model_weights.pth')
+    path = os.path.join('models', 'neural_net', f'first_model_weights.pth')
     board = game.Board(np.zeros((9,9),dtype=np.int8), -1)
-    board.execute((4,4))
     node = AlphaNode(board)
     model = Tic_Tac_Toe_NN.UltimateTicTacToeNet()
-    model.load_state_dict(torch.load(path))
+    if os.path.exists(path):
+        model.load_state_dict(torch.load(path))
     model.eval()
     mcts = AlphaMonteCarloTreeSearch(model)
     best_move = mcts.best_move(node, 300)
-    print(best_move)
-
+    for child in node.children:
+        print(child.move, child.num_rollouts, child.win_counts, child.prior, child.win_counts/child.num_rollouts, child.value)
+    print(best_move[0], node.value)
 
         
