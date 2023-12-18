@@ -24,7 +24,7 @@ class all_AI:
 
     def best_nn_move(self):
         model = Tic_Tac_Toe_NN.UltimateTicTacToeNet()
-        model.load_state_dict(torch.load(os.path.join('models', 'neural_net',f'first_model_weights.pth')))
+        model.load_state_dict(torch.load(os.path.join('models', 'neural_net',f'first_model_weights_short.pth')))
         model.eval()
         self.board.change_perspective()
         Node = MCTS.AlphaNode(self.board)

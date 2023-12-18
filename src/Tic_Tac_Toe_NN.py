@@ -10,8 +10,8 @@ import copy
 class ConvBlock(nn.Module):
     def __init__(self):
         super(ConvBlock, self).__init__()
-        self.conv1 = nn.Conv2d(4, 256, 3, stride=1, padding=1)
-        self.bn1 = nn.BatchNorm2d(256)
+        self.conv1 = nn.Conv2d(4, 32, 3, stride=1, padding=1)
+        self.bn1 = nn.BatchNorm2d(32)
         self.activation = nn.ReLU()
 
     def forward(self, s):
@@ -21,7 +21,7 @@ class ConvBlock(nn.Module):
         return s
 
 class ResBlock(nn.Module):
-    def __init__(self, inplanes=256, planes=256, stride=1, downsample=None):
+    def __init__(self, inplanes=32, planes=32, stride=1, downsample=None):
         super(ResBlock, self).__init__()
         self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=3, stride=stride,
                      padding=1, bias=False)
@@ -44,17 +44,17 @@ class ResBlock(nn.Module):
 class OutBlock(nn.Module):
     def __init__(self):
         super(OutBlock, self).__init__()
-        self.conv = nn.Conv2d(256, 1, kernel_size=1) # value head
+        self.conv = nn.Conv2d(32, 1, kernel_size=1) # value head
         self.bn = nn.BatchNorm2d(1)
-        self.fc1 = nn.Linear(9*9, 64)
-        self.fc2 = nn.Linear(64, 1)
+        self.fc1 = nn.Linear(9*9, 81)
+        self.fc2 = nn.Linear(81, 1)
         
-        self.conv1 = nn.Conv2d(256, 128, kernel_size=1) # policy head
-        self.bn1 = nn.BatchNorm2d(128)
+        self.conv1 = nn.Conv2d(32, 8, kernel_size=1) # policy head
+        self.bn1 = nn.BatchNorm2d(8)
         self.logsoftmax = nn.LogSoftmax(dim=1)
         self.softmax = nn.Softmax(dim=1)
-        self.fc3 = nn.Linear(9*9*128, 9*9*16)
-        self.fc4 = nn.Linear(9*9*16, 9*9)
+        self.fc3 = nn.Linear(9*9*8, 9*9*4)
+        self.fc4 = nn.Linear(9*9*4, 9*9)
 
         self.activation = nn.ReLU()
         self.last_activation = nn.Tanh()
@@ -65,7 +65,7 @@ class OutBlock(nn.Module):
         v = self.last_activation(self.fc2(v))
         
         p = self.activation(self.bn1(self.conv1(s))) # policy head
-        p = p.view(-1, 9*9*128)
+        p = p.view(-1, 9*9*8)
         p = self.activation(self.fc3(p))
         p = self.fc4(p)
         p = self.softmax(p)
@@ -75,13 +75,13 @@ class UltimateTicTacToeNet(nn.Module):
     def __init__(self):
         super(UltimateTicTacToeNet, self).__init__()
         self.conv = ConvBlock()
-        for block in range(10):
+        for block in range(3):
             setattr(self, "res_%i" % block,ResBlock())
         self.outblock = OutBlock()
     
     def forward(self,s):
         s = self.conv(s)
-        for block in range(10):
+        for block in range(3):
             s = getattr(self, "res_%i" % block)(s)
         s = self.outblock(s)
         return s
@@ -106,12 +106,12 @@ class AlphaZero:
         self.model = model
         self.optimizer = torch.optim.SGD(self.model.parameters(), lr=0.003)
         self.scheduler = torch.optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=[100, 200, 300, 400], gamma=0.2)
-        if os.path.exists(os.path.join('models', 'neural_net',f'first_model_weights.pth')):
-            self.model.load_state_dict(torch.load(os.path.join('models', 'neural_net',f'first_model_weights.pth')))
-        if os.path.exists(os.path.join('optimizer', f'first_model_weights.pth')):
-            self.optimizer.load_state_dict(torch.load(os.path.join('models', 'optimizer', f'first_model_weights.pth')))
-        if os.path.exists(os.path.join('scheduler', f'first_model_weights.pth')):
-            self.scheduler.load_state_dict(torch.load(os.path.join('models', 'scheduler', f'first_model_weights.pth')))
+        if os.path.exists(os.path.join('models', 'neural_net',f'first_model_weights_short.pth')):
+            self.model.load_state_dict(torch.load(os.path.join('models', 'neural_net',f'first_model_weights_short.pth')))
+        if os.path.exists(os.path.join('optimizer', f'first_model_weights_short.pth')):
+            self.optimizer.load_state_dict(torch.load(os.path.join('models', 'optimizer', f'first_model_weights_short.pth')))
+        if os.path.exists(os.path.join('scheduler', f'first_model_weights_short.pth')):
+            self.scheduler.load_state_dict(torch.load(os.path.join('models', 'scheduler', f'first_model_weights_short.pth')))
 
     def self_play(self):
         # Führe Selbstspiele durch, um Daten für das Training zu generieren
@@ -195,15 +195,19 @@ class AlphaZero:
                 #self.model.load_state_dict(torch.load(os.path.join('models', 'neural_net',f'first_model_weights.pth')))
                 memory = []
                 self.model.eval()
+                start = time.perf_counter()
                 for self_play_iteration in range(3):
                     new_data = self.self_play()
                     if new_data is not None:
                         memory += new_data
                     else:
                         print('Errorm Data is None')
+                print(f'elapsed time: {time.perf_counter() - start}')
                 self.model.train()
                 print(f'train iteration {iteration}')
+                start = time.perf_counter()
                 self.train_neural_net(memory,0,10)
+                print(f'elapsed time: {time.perf_counter() - start}')
             except KeyboardInterrupt:
                 print('KeyboardInterrupt')
                 break
@@ -211,13 +215,13 @@ class AlphaZero:
                 print('Error:', str(e))
                 break
             print(f'finito iteration {iteration}')
-            torch.save(self.model.state_dict(), os.path.join('models', 'neural_net', f'first_model_weights.pth'))
-            torch.save(self.optimizer.state_dict(), os.path.join('models', 'optimizer', f'first_model_weights.pth'))
-            torch.save(self.scheduler.state_dict(), os.path.join('models', 'scheduler', f'first_model_weights.pth'))
+            torch.save(self.model.state_dict(), os.path.join('models', 'neural_net', f'first_model_weights_short.pth'))
+            torch.save(self.optimizer.state_dict(), os.path.join('models', 'optimizer', f'first_model_weights_short.pth'))
+            torch.save(self.scheduler.state_dict(), os.path.join('models', 'scheduler', f'first_model_weights_short.pth'))
             print('alles wurde gesichert')
-        torch.save(self.model.state_dict(), os.path.join('models', 'neural_net', f'first_model_weights.pth'))
-        torch.save(self.optimizer.state_dict(), os.path.join('models', 'optimizer', f'first_model_weights.pth'))
-        torch.save(self.scheduler.state_dict(), os.path.join('models', 'scheduler', f'first_model_weights.pth'))
+        torch.save(self.model.state_dict(), os.path.join('models', 'neural_net', f'first_model_weights_short.pth'))
+        torch.save(self.optimizer.state_dict(), os.path.join('models', 'optimizer', f'first_model_weights_short.pth'))
+        torch.save(self.scheduler.state_dict(), os.path.join('models', 'scheduler', f'first_model_weights_short.pth'))
         print('alles wurde gesichert')
 # Beispiel für die Verwendung
 if __name__ == "__main__":
@@ -240,6 +244,5 @@ if __name__ == "__main__":
 
     TicTacToeZero.learn(1000)
 
-    #torch.save(TicTacToeZero.model.state_dict(), os.path.join('models', 'neural_net', f'first_model_weights.pth'))
 
     

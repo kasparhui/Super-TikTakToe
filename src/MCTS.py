@@ -4,7 +4,9 @@ import game
 import copy
 import constants
 import torch
-
+import time
+global times
+times = [[],[]]
 class Node:
     def __init__(self, game_state, parent=None, move=None):
         self.game_state = game_state
@@ -150,7 +152,9 @@ class AlphaMonteCarloTreeSearch(MonteCarloTreeSearch):
         if node.is_terminal:
             return node
         #print((node.game_state.get_encoded_state()))
+        times[0].append(time.perf_counter())
         policy, value = self.neural_network(node.game_state.get_encoded_state())
+        times[1].append(time.perf_counter())
         policy = policy[0].detach().numpy()
         policy = policy * node.game_state.possible_move_vector().reshape(-1)
         policy = policy / np.sum(policy)
@@ -203,7 +207,7 @@ if __name__ == '__main__':
     import Tic_Tac_Toe_NN
     import os
 
-    path = os.path.join('models', 'neural_net', f'first_model_weights.pth')
+    path = os.path.join('models', 'neural_net', f'first_model_weights_short.pth')
     board = game.Board(np.zeros((9,9),dtype=np.int8), -1)
     node = AlphaNode(board)
     model = Tic_Tac_Toe_NN.UltimateTicTacToeNet()
@@ -211,9 +215,12 @@ if __name__ == '__main__':
         model.load_state_dict(torch.load(path))
     model.eval()
     mcts = AlphaMonteCarloTreeSearch(model)
-    best_move = mcts.best_move(node, 300)
-    for child in node.children:
-        print(child.move, child.num_rollouts, child.win_counts, child.prior, child.win_counts/child.num_rollouts, child.value)
-    print(best_move[0], node.value)
+    start = time.perf_counter()
+    best_move = mcts.best_move(node, 164)
+    end=time.perf_counter()
+    print('Zeit insgesamt:', end-start)
+    times = np.array(times)
+    print('Zeit für NN:', np.sum(times[1]-times[0]))
+    print('Zeit für MCTS:', end-start-np.sum(times[1]-times[0]))
 
         
