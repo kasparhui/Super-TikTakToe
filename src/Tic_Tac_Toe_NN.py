@@ -211,6 +211,10 @@ class AlphaZero:
                 print('Error:', str(e))
                 break
             print(f'finito iteration {iteration}')
+            torch.save(self.model.state_dict(), os.path.join('models', 'neural_net', f'first_model_weights.pth'))
+            torch.save(self.optimizer.state_dict(), os.path.join('models', 'optimizer', f'first_model_weights.pth'))
+            torch.save(self.scheduler.state_dict(), os.path.join('models', 'scheduler', f'first_model_weights.pth'))
+            print('alles wurde gesichert')
         torch.save(self.model.state_dict(), os.path.join('models', 'neural_net', f'first_model_weights.pth'))
         torch.save(self.optimizer.state_dict(), os.path.join('models', 'optimizer', f'first_model_weights.pth'))
         torch.save(self.scheduler.state_dict(), os.path.join('models', 'scheduler', f'first_model_weights.pth'))
@@ -234,8 +238,8 @@ if __name__ == "__main__":
         model = model.cuda()
     TicTacToeZero = AlphaZero(model)
 
-    TicTacToeZero.learn(100)
+    TicTacToeZero.learn(1000)
 
-    torch.save(TicTacToeZero.model.state_dict(), os.path.join('models', 'neural_net', f'first_model_weights.pth'))
+    #torch.save(TicTacToeZero.model.state_dict(), os.path.join('models', 'neural_net', f'first_model_weights.pth'))
 
     

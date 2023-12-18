@@ -29,7 +29,7 @@ class all_AI:
         self.board.change_perspective()
         Node = MCTS.AlphaNode(self.board)
         mcts = MCTS.AlphaMonteCarloTreeSearch(model)
-        probabiltys = mcts.best_move(Node, 100)[0]
+        probabiltys = mcts.best_move(Node, 250)[0]
         best_move = np.argmax(probabiltys).item()
         print(best_move // 9, best_move % 9)
         return best_move // 9, best_move % 9
