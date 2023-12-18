@@ -10,8 +10,8 @@ import copy
 class ConvBlock(nn.Module):
     def __init__(self):
         super(ConvBlock, self).__init__()
-        self.conv1 = nn.Conv2d(4, 32, 3, stride=1, padding=1)
-        self.bn1 = nn.BatchNorm2d(32)
+        self.conv1 = nn.Conv2d(4, 64, 3, stride=1, padding=1)
+        self.bn1 = nn.BatchNorm2d(64)
         self.activation = nn.ReLU()
 
     def forward(self, s):
@@ -21,7 +21,7 @@ class ConvBlock(nn.Module):
         return s
 
 class ResBlock(nn.Module):
-    def __init__(self, inplanes=32, planes=32, stride=1, downsample=None):
+    def __init__(self, inplanes=64, planes=64, stride=1, downsample=None):
         super(ResBlock, self).__init__()
         self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=3, stride=stride,
                      padding=1, bias=False)
@@ -44,16 +44,16 @@ class ResBlock(nn.Module):
 class OutBlock(nn.Module):
     def __init__(self):
         super(OutBlock, self).__init__()
-        self.conv = nn.Conv2d(32, 1, kernel_size=1) # value head
+        self.conv = nn.Conv2d(64, 1, kernel_size=1) # value head
         self.bn = nn.BatchNorm2d(1)
         self.fc1 = nn.Linear(9*9, 81)
         self.fc2 = nn.Linear(81, 1)
         
-        self.conv1 = nn.Conv2d(32, 8, kernel_size=1) # policy head
-        self.bn1 = nn.BatchNorm2d(8)
+        self.conv1 = nn.Conv2d(64, 16, kernel_size=1) # policy head
+        self.bn1 = nn.BatchNorm2d(16)
         self.logsoftmax = nn.LogSoftmax(dim=1)
         self.softmax = nn.Softmax(dim=1)
-        self.fc3 = nn.Linear(9*9*8, 9*9*4)
+        self.fc3 = nn.Linear(9*9*16, 9*9*4)
         self.fc4 = nn.Linear(9*9*4, 9*9)
 
         self.activation = nn.ReLU()
@@ -65,7 +65,7 @@ class OutBlock(nn.Module):
         v = self.last_activation(self.fc2(v))
         
         p = self.activation(self.bn1(self.conv1(s))) # policy head
-        p = p.view(-1, 9*9*8)
+        p = p.view(-1, 9*9*16)
         p = self.activation(self.fc3(p))
         p = self.fc4(p)
         p = self.softmax(p)
@@ -75,13 +75,13 @@ class UltimateTicTacToeNet(nn.Module):
     def __init__(self):
         super(UltimateTicTacToeNet, self).__init__()
         self.conv = ConvBlock()
-        for block in range(3):
+        for block in range(4):
             setattr(self, "res_%i" % block,ResBlock())
         self.outblock = OutBlock()
     
     def forward(self,s):
         s = self.conv(s)
-        for block in range(3):
+        for block in range(4):
             s = getattr(self, "res_%i" % block)(s)
         s = self.outblock(s)
         return s
@@ -112,9 +112,10 @@ class AlphaZero:
             self.optimizer.load_state_dict(torch.load(os.path.join('models', 'optimizer', f'first_model_weights_short.pth')))
         if os.path.exists(os.path.join('scheduler', f'first_model_weights_short.pth')):
             self.scheduler.load_state_dict(torch.load(os.path.join('models', 'scheduler', f'first_model_weights_short.pth')))
-
+        self.cuda = torch.cuda.is_available()
     def self_play(self):
         # Führe Selbstspiele durch, um Daten für das Training zu generieren
+        import numpy as np
         memory = []
         playerturn = 1
         state = game.Board(playerturn=playerturn)
@@ -135,15 +136,13 @@ class AlphaZero:
                 else: 
                     #print(state.won_games)
                     value = 0
-                print('value:', value)
+                #print('value:', value)
                 for i in range(len(memory)):
                     memory[i][2]*= value
                 return memory
 
     def train_neural_net(self, dataset, epoch_start=0, epoch_stop=20, cpu=0):
         torch.manual_seed(cpu)
-        cuda = torch.cuda.is_available()
-        cuda = False
         criterion = AlphaLoss()
         optimizer = self.optimizer
         scheduler = self.scheduler
@@ -158,7 +157,7 @@ class AlphaZero:
             for i, data in enumerate(train_loader, 0):
                 state, policy, value = data
 
-                if cuda:
+                if self.cuda:
                     state, policy, value = state.cuda().float(), policy.float().cuda(), value.cuda().float()
 
                 optimizer.zero_grad()
@@ -184,42 +183,49 @@ class AlphaZero:
             if len(losses_per_epoch) > 100:
                 if abs(sum(losses_per_epoch[-4:-1]) / 3 - sum(losses_per_epoch[-16:-13]) / 3) <= 0.01:
                     break
-            scheduler.step()
+            #scheduler.step()
         #print(losses_per_epoch)
 
+    def worker(self,_):
+        try:
+            return self.self_play()
+        except KeyboardInterrupt:
+            print('KeyboardInterrupt top')
+            return []
+
     def learn(self, iterations = 5):
-        # Führe das Training durch
+            # Führe das Training durch
         for iteration in range(iterations):
             print('iteraton:',iteration)
             try:
-                #self.model.load_state_dict(torch.load(os.path.join('models', 'neural_net',f'first_model_weights.pth')))
-                memory = []
                 self.model.eval()
                 start = time.perf_counter()
-                for self_play_iteration in range(3):
-                    new_data = self.self_play()
-                    if new_data is not None:
-                        memory += new_data
-                    else:
-                        print('Errorm Data is None')
+                with Pool(8) as p:
+                    memory = p.map(self.worker, range(8))
+                memory = [item for sublist in memory for item in sublist]
+                print('lenght memory:' ,len(memory))
                 print(f'elapsed time: {time.perf_counter() - start}')
-                self.model.train()
                 print(f'train iteration {iteration}')
+                if self.cuda:
+                    self.model.cuda()
+                self.model.train()        
                 start = time.perf_counter()
                 self.train_neural_net(memory,0,10)
                 print(f'elapsed time: {time.perf_counter() - start}')
+                if self.cuda:
+                    self.model.cpu()
             except KeyboardInterrupt:
-                print('KeyboardInterrupt')
+                print('KeyboardInterrupt bottom')
                 break
-            except Exception as e:
-                print('Error:', str(e))
-                break
+                #except Exception as e:
+                    #print('Error:', str(e))
+                    #break
             print(f'finito iteration {iteration}')
             torch.save(self.model.state_dict(), os.path.join('models', 'neural_net', f'first_model_weights_short.pth'))
             torch.save(self.optimizer.state_dict(), os.path.join('models', 'optimizer', f'first_model_weights_short.pth'))
             torch.save(self.scheduler.state_dict(), os.path.join('models', 'scheduler', f'first_model_weights_short.pth'))
             print('alles wurde gesichert')
-        torch.save(self.model.state_dict(), os.path.join('models', 'neural_net', f'first_model_weights_short.pth'))
+        torch.save(self.model.cpu().state_dict(), os.path.join('models', 'neural_net', f'first_model_weights_short.pth'))
         torch.save(self.optimizer.state_dict(), os.path.join('models', 'optimizer', f'first_model_weights_short.pth'))
         torch.save(self.scheduler.state_dict(), os.path.join('models', 'scheduler', f'first_model_weights_short.pth'))
         print('alles wurde gesichert')
@@ -232,7 +238,7 @@ if __name__ == "__main__":
     import time
     from torch.utils.data import Dataset, DataLoader
     import datasets
-    import time
+    from multiprocessing import Pool, Manager
 
     cuda = torch.cuda.is_available()
     cuda = False
@@ -242,7 +248,7 @@ if __name__ == "__main__":
         model = model.cuda()
     TicTacToeZero = AlphaZero(model)
 
-    TicTacToeZero.learn(1000)
+    TicTacToeZero.learn(10)
 
 
     

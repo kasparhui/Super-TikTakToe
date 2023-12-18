@@ -130,7 +130,6 @@ class AlphaMonteCarloTreeSearch(MonteCarloTreeSearch):
     def __init__(self, neural_network):
         super().__init__()
         self.neural_network = neural_network
-
     def traverse(self, node):
         while not node.is_terminal and node.is_expanded:
             node = self.select(node)
@@ -153,9 +152,10 @@ class AlphaMonteCarloTreeSearch(MonteCarloTreeSearch):
             return node
         #print((node.game_state.get_encoded_state()))
         times[0].append(time.perf_counter())
-        policy, value = self.neural_network(node.game_state.get_encoded_state())
+        encoded_state = node.game_state.get_encoded_state()
+        policy, value = self.neural_network(encoded_state)
         times[1].append(time.perf_counter())
-        policy = policy[0].detach().numpy()
+        policy = policy[0].cpu().detach().numpy()
         policy = policy * node.game_state.possible_move_vector().reshape(-1)
         policy = policy / np.sum(policy)
         #print(policy)
@@ -216,7 +216,7 @@ if __name__ == '__main__':
     model.eval()
     mcts = AlphaMonteCarloTreeSearch(model)
     start = time.perf_counter()
-    best_move = mcts.best_move(node, 164)
+    best_move = mcts.best_move(node, 16000)
     end=time.perf_counter()
     print('Zeit insgesamt:', end-start)
     times = np.array(times)
