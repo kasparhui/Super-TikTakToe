@@ -5,9 +5,15 @@ import MCTS
 import Tic_Tac_Toe_NN
 import torch
 import os
+
 class all_AI:
-    def __init__(self, player):
+    def __init__(self, player, args = None, path = None):
         self.player = player
+        if not (args is None):
+            self.model = Tic_Tac_Toe_NN.UltimateTicTacToeNet(args[0], args[1])
+            if not (path is None):
+                self.model.load_state_dict(torch.load(path))
+            self.model.eval()
 
     def make_move(self, board, mode = 'random_move', depth = 3, smart_depth = 100):
         self.board = copy.deepcopy(board)
@@ -23,15 +29,13 @@ class all_AI:
             print('Kein gültiger move')
 
     def best_nn_move(self):
-        model = Tic_Tac_Toe_NN.UltimateTicTacToeNet()
-        model.load_state_dict(torch.load(os.path.join('models', 'neural_net',f'first_model_weights_short.pth')))
-        model.eval()
+        model = self.model
         self.board.change_perspective()
         Node = MCTS.AlphaNode(self.board)
         mcts = MCTS.AlphaMonteCarloTreeSearch(model)
         probabiltys = mcts.best_move(Node, 250)[0]
         best_move = np.argmax(probabiltys).item()
-        print(best_move // 9, best_move % 9)
+        #print(best_move // 9, best_move % 9)
         return best_move // 9, best_move % 9
         
     def straight_count(self, temp_array):

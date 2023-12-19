@@ -8,10 +8,10 @@ import copy
 
 
 class ConvBlock(nn.Module):
-    def __init__(self):
+    def __init__(self, res_block_planes):
         super(ConvBlock, self).__init__()
-        self.conv1 = nn.Conv2d(4, 64, 3, stride=1, padding=1)
-        self.bn1 = nn.BatchNorm2d(64)
+        self.conv1 = nn.Conv2d(4, res_block_planes, 3, stride=1, padding=1)
+        self.bn1 = nn.BatchNorm2d(res_block_planes)
         self.activation = nn.ReLU()
 
     def forward(self, s):
@@ -42,14 +42,14 @@ class ResBlock(nn.Module):
         return out
     
 class OutBlock(nn.Module):
-    def __init__(self):
+    def __init__(self, res_block_planes):
         super(OutBlock, self).__init__()
-        self.conv = nn.Conv2d(64, 1, kernel_size=1) # value head
+        self.conv = nn.Conv2d(res_block_planes, 1, kernel_size=1) # value head
         self.bn = nn.BatchNorm2d(1)
         self.fc1 = nn.Linear(9*9, 81)
         self.fc2 = nn.Linear(81, 1)
         
-        self.conv1 = nn.Conv2d(64, 16, kernel_size=1) # policy head
+        self.conv1 = nn.Conv2d(res_block_planes, 16, kernel_size=1) # policy head
         self.bn1 = nn.BatchNorm2d(16)
         self.logsoftmax = nn.LogSoftmax(dim=1)
         self.softmax = nn.Softmax(dim=1)
@@ -72,16 +72,17 @@ class OutBlock(nn.Module):
         return p, v
     
 class UltimateTicTacToeNet(nn.Module):
-    def __init__(self):
+    def __init__(self, res_block_planes = 64, res_block_layers = 4):
         super(UltimateTicTacToeNet, self).__init__()
-        self.conv = ConvBlock()
-        for block in range(4):
-            setattr(self, "res_%i" % block,ResBlock())
-        self.outblock = OutBlock()
+        self.res_block_layers = res_block_layers
+        self.conv = ConvBlock(res_block_planes)
+        for block in range(self.res_block_layers):
+            setattr(self, "res_%i" % block,ResBlock(res_block_planes, res_block_planes))
+        self.outblock = OutBlock(res_block_planes)
     
     def forward(self,s):
         s = self.conv(s)
-        for block in range(4):
+        for block in range(self.res_block_layers):
             s = getattr(self, "res_%i" % block)(s)
         s = self.outblock(s)
         return s
@@ -237,8 +238,8 @@ if __name__ == "__main__":
     import AI
     import time
     from torch.utils.data import Dataset, DataLoader
-    import datasets
-    from multiprocessing import Pool, Manager
+    import test_models
+    from multiprocessing import Pool
 
     cuda = torch.cuda.is_available()
     cuda = False

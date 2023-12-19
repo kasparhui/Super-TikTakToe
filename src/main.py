@@ -6,7 +6,7 @@ from AI import all_AI
 from draw_game import drawGameState
 from constants import *
 import numpy as np
-
+import os
 def little_position(pos):
     if 18<= pos < 87: 
         return 0
@@ -25,14 +25,14 @@ def play_game(AI_mode=False, AI_mode2 = False, player_turn='X'):
     font = pygame.font.Font(None, 80)
     running = True
     board = game.Board(np.zeros((9,9),dtype=np.int8), tic_tac_toe_mapping[player_turn])
-    AI = all_AI(tic_tac_toe_mapping[player_turn])
+    AI = all_AI(tic_tac_toe_mapping[player_turn], args=(64, 4), path=os.path.join('models', 'neural_net' ,f'first_model_weights_short.pth'))
     AI.board = board
     initial_playerturn = player_turn
     move_was_made = True
     while running:
         if not move_was_made:
             if (player_turn == initial_playerturn) and AI_mode:
-                position = AI.make_move(board,'best_nn_move',depth = 5, smart_depth= 25)
+                position = AI.make_move(board,'best_nn_move')
                 board.execute(position)
                 player_turn=short_mapping[player_turn]
                 board.last_move = position
@@ -73,7 +73,7 @@ def play_game(AI_mode=False, AI_mode2 = False, player_turn='X'):
                             player_turn=short_mapping[player_turn]
         if not move_was_made:
             if (player_turn != initial_playerturn) and AI_mode2:
-                position = AI.make_move(board,'naiv_MCTC', depth = 5, smart_depth= 25)
+                position = AI.make_move(board,'best_nn_move', args = (64, 4) , path = None)
                 board.execute(position)
                 player_turn=short_mapping[player_turn]
                 board.last_move = position
