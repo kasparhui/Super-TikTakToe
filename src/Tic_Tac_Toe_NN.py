@@ -225,10 +225,10 @@ class AlphaZero:
             torch.save(self.optimizer.state_dict(), os.path.join('models', 'optimizer', f'first_model_weights_short.pth'))
             torch.save(self.scheduler.state_dict(), os.path.join('models', 'scheduler', f'first_model_weights_short.pth'))
             print('alles wurde gesichert')
-        torch.save(self.model.cpu().state_dict(), os.path.join('models', 'neural_net', f'first_model_weights_short.pth'))
+        torch.save(self.model.state_dict(), os.path.join('models', 'neural_net', f'first_model_weights_short.pth'))
         torch.save(self.optimizer.state_dict(), os.path.join('models', 'optimizer', f'first_model_weights_short.pth'))
         torch.save(self.scheduler.state_dict(), os.path.join('models', 'scheduler', f'first_model_weights_short.pth'))
-        print('alles wurde gesichert')
+        print('alles wurde gesichert!!')
 # Beispiel für die Verwendung
 if __name__ == "__main__":
     # Beispiel für die Nutzung der implementierten Klassen
@@ -248,7 +248,7 @@ if __name__ == "__main__":
         model = model.cuda()
     TicTacToeZero = AlphaZero(model)
 
-    TicTacToeZero.learn(10)
+    TicTacToeZero.learn(1000)
 
 
     
