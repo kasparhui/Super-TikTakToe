@@ -2,6 +2,7 @@ from game import *
 import random
 import math
 import MCTS
+import fast_minimax
 import Tic_Tac_Toe_NN
 import torch
 import os
@@ -15,12 +16,12 @@ class all_AI:
                 self.model.load_state_dict(torch.load(path))
             self.model.eval()
 
-    def make_move(self, board, mode = 'random_move', depth = 3, smart_depth = 100):
+    def make_move(self, board, mode = 'random_move', depth = 3, smart_depth = 100, time_limit = None):
         self.board = copy.deepcopy(board)
         if mode == 'random_move':
             return self.random_move()
         elif mode == 'best_move':
-            return self.best_move(depth, smart_depth)
+            return self.best_move(depth, smart_depth, time_limit)
         elif mode == 'naiv_MCTC':
             return self.naiv_MCTC()
         elif mode == 'best_nn_move':
@@ -76,9 +77,10 @@ class all_AI:
         return self.little_evaluation(values)
 
 
-    def best_move(self, depth, smart_depth):
-        position = self.minmax(self.board.playerturn, depth, smart_depth)[1]
-        #print(self.board.board, self.board.playerturn)
+    def best_move(self, depth, smart_depth = 100, time_limit = None):
+        # Fast compiled minimax (fast_minimax.py). self.minmax below is the
+        # original, slow version with the same evaluation, kept as a reference.
+        value, position = fast_minimax.best_move(self.board, depth, time_limit)
         return position
 
     def random_move(self):

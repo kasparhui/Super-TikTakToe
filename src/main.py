@@ -32,7 +32,7 @@ def play_game(AI_mode=False, AI_mode2 = False, player_turn='X'):
     while running:
         if not move_was_made:
             if (player_turn == initial_playerturn) and AI_mode:
-                position = AI.make_move(board,'best_move')
+                position = AI.make_move(board, 'best_move', depth=AI_DEPTH, time_limit=AI_TIME_LIMIT)
                 board.execute(position)
                 player_turn=short_mapping[player_turn]
                 board.last_move = position
@@ -73,7 +73,7 @@ def play_game(AI_mode=False, AI_mode2 = False, player_turn='X'):
                             player_turn=short_mapping[player_turn]
         if not move_was_made:
             if (player_turn != initial_playerturn) and AI_mode2:
-                position = AI.make_move(board,'best_move')
+                position = AI.make_move(board, 'best_move', depth=AI_DEPTH, time_limit=AI_TIME_LIMIT)
                 board.execute(position)
                 player_turn=short_mapping[player_turn]
                 board.last_move = position
