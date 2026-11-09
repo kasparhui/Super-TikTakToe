@@ -16,7 +16,7 @@ class all_AI:
                 self.model.load_state_dict(torch.load(path))
             self.model.eval()
 
-    def make_move(self, board, mode = 'random_move', depth = 3, smart_depth = 100, time_limit = None):
+    def make_move(self, board, mode = 'random_move', depth = 11, smart_depth = 100, time_limit = None):
         self.board = copy.deepcopy(board)
         if mode == 'random_move':
             return self.random_move()

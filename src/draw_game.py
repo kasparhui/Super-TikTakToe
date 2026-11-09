@@ -1,55 +1,67 @@
 import pygame
 from constants import *
 
+# A big field is addressed by (big_x, big_y) = (column, row) on the screen and
+# has the index big_x + 3 * big_y in board.board / board.won_games. The cells
+# inside a little board work the same way: index cell_x + 3 * cell_y.
+
+BIG = WIDTH // 3            # size of one big field in pixels
+CELL = (BIG - 36) // 3      # size of one little cell in pixels
+HIGHLIGHT = (243, 219, 214)
+LAST_MOVE = (61, 89, 171)
+
+
 def draw_big_grid(screen):
     for i in range(1,3):
         pygame.draw.rect(screen, 'black', pygame.Rect(i*WIDTH//3-10, 9, 20, WIDTH-18))
         pygame.draw.rect(screen, 'black', pygame.Rect(9, i*HEIGHT//3-10, HEIGHT-18, 20))
 
-def draw_little_grid_and_next_moves(screen,board,big_row,big_col):
-    if board.next_move == (big_row + big_col*3):
-        pygame.draw.rect(screen, (243,219,214), pygame.Rect(10+big_row*WIDTH//3,10+big_col*HEIGHT//3,WIDTH//3-20,HEIGHT//3-20))
-    elif board.next_move == None and board.won_games[big_row+big_col*3] == 0:
-        pygame.draw.rect(screen, (243,219,214), pygame.Rect(10+big_row*WIDTH//3,10+big_col*HEIGHT//3,WIDTH//3-20,HEIGHT//3-20))
+def draw_little_grid_and_next_moves(screen, board, big_x, big_y):
+    index = big_x + 3*big_y
+    left, top = big_x*BIG, big_y*BIG
+    # highlight the little boards the next move may be played in
+    if not board.game_is_over and board.won_games[index] == 0 and board.next_move in (None, index):
+        pygame.draw.rect(screen, HIGHLIGHT, pygame.Rect(left+10, top+10, BIG-20, BIG-20))
     for i in range(1,3):
-        pygame.draw.rect(screen, 'black', pygame.Rect(i*(WIDTH//3-36)//3+big_row*WIDTH//3+13, big_col*HEIGHT//3+18, 10, WIDTH//3-36))
-        pygame.draw.rect(screen, 'black', pygame.Rect(big_row*WIDTH//3+18, i*(HEIGHT//3-36)//3 + big_col*HEIGHT//3+13, HEIGHT//3-36, 10))
+        pygame.draw.rect(screen, 'black', pygame.Rect(left + i*CELL + 13, top+18, 10, BIG-36))
+        pygame.draw.rect(screen, 'black', pygame.Rect(left+18, top + i*CELL + 13, BIG-36, 10))
 
-def draw_little_state(screen,board,big_row,big_col,row,col):
-    temp_board = board.board[big_row + big_col*3]
-    top_left = (big_row*WIDTH//3+col*((WIDTH//3-36)//3)+32,big_col*HEIGHT//3+row*((HEIGHT//3-36)//3)+26)
-    top_right = (big_row*WIDTH//3+col*((WIDTH//3-36)//3)+73,big_col*HEIGHT//3+row*((HEIGHT//3-36)//3)+26)
-    bottom_right = (big_row*WIDTH//3+col*((WIDTH//3-36)//3)+73,big_col*HEIGHT//3+row*((HEIGHT//3-36)//3)+79)
-    bottom_left = (big_row*WIDTH//3+col*((WIDTH//3-36)//3)+32,big_col*HEIGHT//3+row*((HEIGHT//3-36)//3)+79)
-    if type(board.last_move) != type(None):
-        if board.last_move[0] == big_row + big_col*3 and board.last_move[1] == 3 * row + col:
-            if temp_board[3*row + col] == -1:
-                pygame.draw.circle(screen, (61,89,171),tuple((x + y)/2 for x, y in zip(top_left, bottom_right)),26,6)
-            elif temp_board[3*row + col] == 1:
-                pygame.draw.line(screen,(61,89,171), top_left, bottom_right, 8)
-                pygame.draw.line(screen,(61,89,171),top_right, bottom_left, 8)
-        else:
-            if temp_board[3*row + col] == -1:
-                pygame.draw.circle(screen, 'black',tuple((x + y)/2 for x, y in zip(top_left, bottom_right)),26,6)
-            elif temp_board[3*row + col] == 1:
-                pygame.draw.line(screen,'black', top_left, bottom_right, 8)
-                pygame.draw.line(screen,'black',top_right, bottom_left, 8)
-        
-def draw_big_state(screen,board,big_col,big_row):
-    if board.won_games[big_row*3 + big_col] != 0:
-        if board.won_games[big_row*3 + big_col] == -1:
-            pygame.draw.circle(screen, 'green', (big_col*WIDTH//3+121.5, big_row*HEIGHT//3+121.5),100,15)
-        elif board.won_games[big_row*3 + big_col] == 1:
-            pygame.draw.line(screen,'green',(big_col*WIDTH//3+29, big_row*HEIGHT//3+18),(big_col*WIDTH//3+214, big_row*HEIGHT//3+225),21)
-            pygame.draw.line(screen,'green',(big_col*WIDTH//3+214, big_row*HEIGHT//3+18),(big_col*WIDTH//3+29, big_row*HEIGHT//3+225),21)
+def draw_little_state(screen, board, big_x, big_y, cell_x, cell_y):
+    index = big_x + 3*big_y
+    cell = cell_x + 3*cell_y
+    value = board.board[index][cell]
+    if value == 0:
+        return
+    left = big_x*BIG + cell_x*CELL + 32
+    top = big_y*BIG + cell_y*CELL + 26
+    right, bottom = left + 41, top + 53
+    is_last_move = board.last_move is not None and board.last_move[0] == index and board.last_move[1] == cell
+    color = LAST_MOVE if is_last_move else 'black'
+    if value == -1:
+        pygame.draw.circle(screen, color, ((left+right)/2, (top+bottom)/2), 26, 6)
+    else:
+        pygame.draw.line(screen, color, (left, top), (right, bottom), 8)
+        pygame.draw.line(screen, color, (right, top), (left, bottom), 8)
+
+def draw_big_state(screen, board, big_x, big_y):
+    winner = board.won_games[big_x + 3*big_y]
+    left, top = big_x*BIG, big_y*BIG
+    if winner == -1:
+        pygame.draw.circle(screen, 'green', (left+121.5, top+121.5), 100, 15)
+    elif winner == 1:
+        pygame.draw.line(screen, 'green', (left+29, top+18), (left+214, top+225), 21)
+        pygame.draw.line(screen, 'green', (left+214, top+18), (left+29, top+225), 21)
 
 def drawGameState(screen, board):
     screen.fill(pygame.Color('white'))
     draw_big_grid(screen)
-    for big_row in range(3):
-        for big_col in range(3):
-            draw_little_grid_and_next_moves(screen,board,big_row,big_col)     
-            for row in range(3):
-                for col in range(3):
-                    draw_little_state(screen,board,big_row,big_col,col,row)
-            draw_big_state(screen,board,big_col,big_row)
+    for big_y in range(3):
+        for big_x in range(3):
+            draw_little_grid_and_next_moves(screen, board, big_x, big_y)
+            for cell_y in range(3):
+                for cell_x in range(3):
+                    draw_little_state(screen, board, big_x, big_y, cell_x, cell_y)
+    # The big crosses and circles come last, so that no little grid is drawn over them.
+    for big_y in range(3):
+        for big_x in range(3):
+            draw_big_state(screen, board, big_x, big_y)

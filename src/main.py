@@ -1,130 +1,190 @@
-import copy
+import os
+
 import pygame
-import random
+
 import game
 from AI import all_AI
-from draw_game import drawGameState
 from constants import *
-import numpy as np
-import os
+from draw_game import drawGameState
+
+# ------------------------------- Settings -------------------------------
+# Who plays X and who plays O. 'type' is one of:
+#   'human'       you play with the mouse
+#   'minimax'     minimax with alpha-beta pruning. Options:
+#                   'depth'       looks depth - 1 moves ahead
+#                   'time_limit'  rough thinking time per move in seconds; the AI
+#                                 stops deepening early when it runs out.
+#                                 Leave it out to always search the full depth.
+#   'mcts'        Monte Carlo tree search with random playouts
+#   'neural_net'  AlphaZero style search with the trained neural network
+#   'random'      random moves
+PLAYERS = {
+    'X': {'type': 'minimax', 'depth': 14, 'time_limit': 2.0},
+    'O': {'type': 'human'},
+}
+STARTING_PLAYER = 'X'
+
+# Weights and size (channels, residual blocks) of the network for 'neural_net'
+MODEL_PATH = os.path.join('models', 'neural_net', 'first_model_weights_short.pth')
+MODEL_ARGS = (64, 4)
+# ------------------------------------------------------------------------
+
+# settings name -> mode name of all_AI.make_move
+AI_MODES = {
+    'minimax': 'best_move',
+    'mcts': 'naiv_MCTC',
+    'neural_net': 'best_nn_move',
+    'random': 'random_move',
+}
+DEFAULT_DEPTH = 11
+TEXT_HEIGHT = 70
+
+
+def create_ai(symbol, settings):
+    """The all_AI object for one player, or None for a human."""
+    player_type = settings['type']
+    if player_type == 'human':
+        return None
+    if player_type not in AI_MODES:
+        raise ValueError(f"Unknown player type '{player_type}' for player {symbol}. "
+                         f"Use 'human' or one of {list(AI_MODES)}.")
+    if player_type == 'neural_net':
+        return all_AI(tic_tac_toe_mapping[symbol], args=MODEL_ARGS, path=MODEL_PATH)
+    return all_AI(tic_tac_toe_mapping[symbol])
+
+
+def ai_move(ai, settings, board):
+    return ai.make_move(board, AI_MODES[settings['type']],
+                        depth=settings.get('depth', DEFAULT_DEPTH),
+                        time_limit=settings.get('time_limit'))
+
+
+def new_board():
+    return game.Board(playerturn=tic_tac_toe_mapping[STARTING_PLAYER])
+
+
+def play(board, position):
+    board.execute(position)
+    board.last_move = position
+
+
 def little_position(pos):
-    if 18<= pos < 87: 
+    if 18 <= pos < 87:
         return 0
-    elif 87<= pos <= 156:
+    elif 87 <= pos <= 156:
         return 1
     elif 156 < pos <= 225:
         return 2
-    else: 
+    else:
         return None
 
-def play_game(AI_mode=False, AI_mode2 = False, player_turn='X'):
+
+def position_from_mouse(mouse_position):
+    """(big field, little field) under the mouse, or None if it is on a grid line or outside the board."""
+    x, y = mouse_position
+    if not (0 <= x < WIDTH and 0 <= y < HEIGHT):
+        return None
+    cell_x = little_position(x % (WIDTH // 3))
+    cell_y = little_position(y % (HEIGHT // 3))
+    if cell_x is None or cell_y is None:
+        return None
+    big_x = x // (WIDTH // 3)
+    big_y = y // (HEIGHT // 3)
+    return (3 * big_y + big_x, 3 * cell_y + cell_x)
+
+
+def undo(board, ais):
+    """Take back the last move; against an AI also the AI's answer, so that it is the human's turn again."""
+    human_players = sum(ai is None for ai in ais.values())
+    if human_players == 2:
+        moves_to_undo = 1
+    elif human_players == 1:
+        human_to_move = ais[inverse_tic_tac_toe_mapping[board.playerturn]] is None
+        moves_to_undo = 2 if human_to_move else 1
+    else:
+        return
+    if len(board.log) >= moves_to_undo:
+        for _ in range(moves_to_undo):
+            board.undo_move()
+
+
+def status_text(board):
+    if not board.game_is_over:
+        return f'Spieler {inverse_tic_tac_toe_mapping[board.playerturn]} ist am Zug'
+    if game.game_is_win(board.won_games)[0]:
+        # the player who made the last move has won
+        return f'Spieler {inverse_tic_tac_toe_mapping[-board.playerturn]} hat gewonnen!'
+    return 'Unentschieden!'
+
+
+def draw_win_line(screen, board):
+    win_line = game.game_is_win(board.won_games)[1]
+    if 1 <= win_line <= 3:      # column
+        x = (win_line - 1) * WIDTH // 3 + WIDTH // 6
+        pygame.draw.line(screen, 'red', (x, 0), (x, HEIGHT), 15)
+    elif 4 <= win_line <= 6:    # row
+        y = (win_line - 4) * HEIGHT // 3 + HEIGHT // 6
+        pygame.draw.line(screen, 'red', (0, y), (WIDTH, y), 15)
+    elif win_line == 7:
+        pygame.draw.line(screen, 'red', (0, 0), (WIDTH, HEIGHT), 20)
+    elif win_line == 8:
+        pygame.draw.line(screen, 'red', (0, HEIGHT), (WIDTH, 0), 20)
+
+
+def draw(screen, font, board):
+    drawGameState(screen, board)
+    if board.game_is_over:
+        draw_win_line(screen, board)
+    text_surface = font.render(status_text(board), True, 'black')
+    text_rect = text_surface.get_rect()
+    text_rect.center = (WIDTH // 2, HEIGHT + 25)
+    screen.blit(text_surface, text_rect)
+    pygame.display.flip()
+
+
+def play_game():
+    """Mouse click: play a move.  U: undo.  Space (after the game): new game."""
     pygame.init()
     pygame.display.set_caption('Super TikTakToe')
-    screen = pygame.display.set_mode((WIDTH ,HEIGHT + 70 ))
+    screen = pygame.display.set_mode((WIDTH, HEIGHT + TEXT_HEIGHT))
     clock = pygame.time.Clock()
     font = pygame.font.Font(None, 80)
+
+    ais = {symbol: create_ai(symbol, PLAYERS[symbol]) for symbol in ('X', 'O')}
+    board = new_board()
+
     running = True
-    board = game.Board(np.zeros((9,9),dtype=np.int8), tic_tac_toe_mapping[player_turn])
-    AI = all_AI(tic_tac_toe_mapping[player_turn], args=(64, 4), path=os.path.join('models', 'neural_net' ,f'first_model_weights_short.pth'))
-    AI.board = board
-    initial_playerturn = player_turn
-    move_was_made = True
     while running:
-        if not move_was_made:
-            if (player_turn == initial_playerturn) and AI_mode:
-                position = AI.make_move(board, 'best_move', depth=AI_DEPTH, time_limit=AI_TIME_LIMIT)
-                board.execute(position)
-                player_turn=short_mapping[player_turn]
-                board.last_move = position
-                move_was_made = True
-                print('best_move AI', game.flip_player(board.playerturn), position)
-
         for e in pygame.event.get():
+            symbol = inverse_tic_tac_toe_mapping[board.playerturn]
             if e.type == pygame.QUIT:
-                #return
                 running = False
-            if e.type == pygame.MOUSEBUTTONDOWN:
-                if not move_was_made:
-                    if ((initial_playerturn == player_turn) and (not AI_mode)) or ((initial_playerturn != player_turn) and (not AI_mode2)):
-                        location = pygame.mouse.get_pos()
-                        big_COL = location[1]//(WIDTH//3)
-                        big_ROW = location[0]//(HEIGHT//3)
-                        col_pos = location[1] % (WIDTH //3)
-                        row_pos = location[0] % (HEIGHT //3)
-                        col = little_position(col_pos)
-                        row = little_position(row_pos) 
-                        if (col == None) or (row ==None):
-                            continue
-                        position = (3*big_COL + big_ROW, 3*col + row)
-                        if board.is_valid_move(position):
-                            board.execute(position)
-                            player_turn=short_mapping[player_turn]
-                            board.last_move = position
-                            move_was_made = True
-            if e.type == pygame.KEYDOWN:
+            elif e.type == pygame.MOUSEBUTTONDOWN:
+                if ais[symbol] is None and not board.game_is_over:
+                    position = position_from_mouse(e.pos)
+                    if position is not None and board.is_valid_move(position):
+                        play(board, position)
+            elif e.type == pygame.KEYDOWN:
                 if e.key == pygame.K_u:
-                    if player_turn == 'X' and AI_mode2:
-                        if len(board.log) > 1:
-                            board.undo_move()
-                            board.undo_move()
-                    else:
-                        if board.log != []:
-                            board.undo_move()
-                            player_turn=short_mapping[player_turn]
-        if not move_was_made:
-            if (player_turn != initial_playerturn) and AI_mode2:
-                position = AI.make_move(board, 'best_move', depth=AI_DEPTH, time_limit=AI_TIME_LIMIT)
-                board.execute(position)
-                player_turn=short_mapping[player_turn]
-                board.last_move = position
-                move_was_made = True
-
-        if board.game_is_over: 
-            if game.game_is_win(board.won_games)[0]: 
-                string = f'Spieler {short_mapping[player_turn]} hat gewonnen!'
-            elif game.game_is_tie(board.won_games): 
-                string = f'Unentschieden!'
-            board.next_move = -1
+                    undo(board, ais)
+                elif e.key == pygame.K_SPACE and board.game_is_over:
+                    board = new_board()
+        if not running:
             break
 
-        drawGameState(screen, board)
-        string = f'Spieler {player_turn} ist am Zug'
-        text_surface = font.render(string, True, 'black')
-        text_rect = text_surface.get_rect()
-        text_rect.center = (WIDTH // 2, HEIGHT +25)
-        move_was_made = False
-        screen.blit(text_surface, text_rect)
+        # Draw first, so the last move is visible while the AI is thinking.
+        draw(screen, font, board)
         clock.tick(15)
-        pygame.display.flip()
-        
-    running = True
-    while running:
-        for e in pygame.event.get():
-            if e.type == pygame.QUIT:
-                running = False
-            if e.type == pygame.KEYDOWN:
-                if e.key == pygame.K_SPACE:
-                    play_game(AI_mode, AI_mode2, initial_playerturn)
-                    return
-        winLine = game.game_is_win(board.won_games)[1]
-        drawGameState(screen, board)
-        if winLine == 1 or winLine == 2 or winLine == 3:
-            pygame.draw.line(screen,'red',((winLine-1)*HEIGHT//3+HEIGHT//6,0),(((winLine-1)*HEIGHT//3+HEIGHT//6), WIDTH),15)
-        elif winLine == 4 or winLine == 5 or winLine ==6:
-            pygame.draw.line(screen,'red',(0,(winLine-4)*WIDTH//3+WIDTH//6),(WIDTH,(winLine-4)*WIDTH//3+WIDTH//6),15)
-        elif winLine == 7:
-            pygame.draw.line(screen,'red',(0,0),(WIDTH,HEIGHT),20)
-        elif winLine == 8:
-            pygame.draw.line(screen,'red',(0,HEIGHT),(WIDTH,0),20)
-        else:
-            pass
-        text_surface = font.render(string, True, 'black')
-        text_rect = text_surface.get_rect()
-        text_rect.center = (WIDTH // 2, HEIGHT + 25)
-        screen.blit(text_surface, text_rect)
-        clock.tick(15)
-        pygame.display.flip()
+
+        symbol = inverse_tic_tac_toe_mapping[board.playerturn]
+        if ais[symbol] is not None and not board.game_is_over:
+            position = ai_move(ais[symbol], PLAYERS[symbol], board)
+            play(board, position)
+            pygame.event.clear(pygame.MOUSEBUTTONDOWN)  # ignore clicks made while the AI was thinking
+            print(f"{symbol} ({PLAYERS[symbol]['type']}) spielt {tuple(int(i) for i in position)}")
+
+    pygame.quit()
 
 
 if __name__ == '__main__':
-    play_game(True, False, 'X')
+    play_game()
