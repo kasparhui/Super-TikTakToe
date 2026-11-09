@@ -51,6 +51,7 @@ class Board:
             self.last_move = None
         if not check_if_game_over(self.board[position[0]]):
             self.won_games[position[0]] = 0
+        self.game_is_over = False
         self.log.pop(-1)
         self.playerturn = flip_player(self.playerturn)
         return

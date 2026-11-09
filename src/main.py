@@ -104,7 +104,7 @@ def play_game(AI_mode=False, AI_mode2 = False, player_turn='X'):
                 running = False
             if e.type == pygame.KEYDOWN:
                 if e.key == pygame.K_SPACE:
-                    play_game(AI_mode,player_turn)
+                    play_game(AI_mode, AI_mode2, initial_playerturn)
                     return
         winLine = game.game_is_win(board.won_games)[1]
         drawGameState(screen, board)

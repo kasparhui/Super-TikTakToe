@@ -82,8 +82,9 @@ class all_AI:
         return position
 
     def random_move(self):
-        position = np.random.choice(self.possible_moves())
-        return (position//9, position%9)
+        actions = self.possible_moves()
+        position = actions[np.random.randint(len(actions))]
+        return (int(position[0]), int(position[1]))
     
     def naiv_MCTC(self, iterations = 1000):
         node = MCTS.Node(self.board)
@@ -95,7 +96,9 @@ class all_AI:
     
         return self.board.possible_moves()
 
-    def minmax(self, playerturn, depth, smart_depth):
+    def minmax(self, playerturn, depth, smart_depth, alpha=-2, beta=2, is_root=True):
+        # Minimax with alpha-beta pruning. Player 1 maximises, player -1 minimises.
+        # alpha/beta are the best values each side can already guarantee.
         if self.board.game_is_over:
             if check_if_game_over(self.board.won_games):
                 if game_is_win(self.board.won_games)[0]:
@@ -116,34 +119,39 @@ class all_AI:
                 top_moves = actions[np.argsort(depth1_evaluation)[-smart_depth:]]
                 actions = top_moves
 
+        if is_root:
+            # Pruned siblings only return bounds, so equal-valued moves can't be
+            # collected reliably. Shuffling the root moves and keeping the first
+            # strictly best one still picks uniformly among the best moves.
+            actions = np.random.permutation(actions)
+
+        best_action = None
+        playerflip = flip_player(playerturn)
         if playerturn == 1:
             value = -2
-            for i in actions:
-                playerflip = flip_player(playerturn)
-                self.board.execute(i)
-                best = self.minmax(playerflip, depth-1, smart_depth)[0]
-                if best >= value:
-                    if best > value:
-                        value = best
-                        path = i
-                        liste = [i]
-                    else:
-                        liste.append(i)
+            for action in actions:
+                self.board.execute(action)
+                score = self.minmax(playerflip, depth-1, smart_depth, alpha, beta, False)[0]
                 self.board.undo_move()
-        if playerturn == -1:
+                if score > value:
+                    value = score
+                    best_action = action
+                alpha = max(alpha, value)
+                if alpha >= beta:
+                    break
+        else:
             value = 2
-            for i in actions:
-                playerflip = flip_player(playerturn)
-                self.board.execute(i)
-                best = self.minmax(playerflip, depth-1, smart_depth)[0]
-                if best <= value:
-                    if best < value:
-                        value = best
-                        liste =[i]
-                    else:
-                        liste.append(i)
+            for action in actions:
+                self.board.execute(action)
+                score = self.minmax(playerflip, depth-1, smart_depth, alpha, beta, False)[0]
                 self.board.undo_move()
-        return value , random.choice(liste)
+                if score < value:
+                    value = score
+                    best_action = action
+                beta = min(beta, value)
+                if alpha >= beta:
+                    break
+        return value, best_action
         
 
 

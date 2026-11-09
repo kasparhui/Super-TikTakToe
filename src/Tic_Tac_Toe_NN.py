@@ -109,9 +109,9 @@ class AlphaZero:
         self.scheduler = torch.optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=[100, 200, 300, 400], gamma=0.2)
         if os.path.exists(os.path.join('models', 'neural_net',f'first_model_weights_short.pth')):
             self.model.load_state_dict(torch.load(os.path.join('models', 'neural_net',f'first_model_weights_short.pth')))
-        if os.path.exists(os.path.join('optimizer', f'first_model_weights_short.pth')):
+        if os.path.exists(os.path.join('models', 'optimizer', f'first_model_weights_short.pth')):
             self.optimizer.load_state_dict(torch.load(os.path.join('models', 'optimizer', f'first_model_weights_short.pth')))
-        if os.path.exists(os.path.join('scheduler', f'first_model_weights_short.pth')):
+        if os.path.exists(os.path.join('models', 'scheduler', f'first_model_weights_short.pth')):
             self.scheduler.load_state_dict(torch.load(os.path.join('models', 'scheduler', f'first_model_weights_short.pth')))
         self.cuda = torch.cuda.is_available()
     def self_play(self):
@@ -184,7 +184,6 @@ class AlphaZero:
             if len(losses_per_epoch) > 100:
                 if abs(sum(losses_per_epoch[-4:-1]) / 3 - sum(losses_per_epoch[-16:-13]) / 3) <= 0.01:
                     break
-            #scheduler.step()
         #print(losses_per_epoch)
 
     def worker(self,_):
@@ -212,6 +211,9 @@ class AlphaZero:
                 self.model.train()        
                 start = time.perf_counter()
                 self.train_neural_net(memory,0,10)
+                # one scheduler step per training iteration: the milestones
+                # (100, 200, 300, 400) count iterations, not epochs
+                self.scheduler.step()
                 print(f'elapsed time: {time.perf_counter() - start}')
                 if self.cuda:
                     self.model.cpu()
