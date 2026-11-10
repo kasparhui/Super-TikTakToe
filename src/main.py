@@ -1,9 +1,7 @@
-import os
-
 import pygame
 
 import game
-from AI import all_AI
+from AI import create_ai, ai_move
 from constants import *
 from draw_game import drawGameState
 
@@ -15,48 +13,23 @@ from draw_game import drawGameState
 #                   'time_limit'  rough thinking time per move in seconds; the AI
 #                                 stops deepening early when it runs out.
 #                                 Leave it out to always search the full depth.
-#   'mcts'        Monte Carlo tree search with random playouts
-#   'neural_net'  AlphaZero style search with the trained neural network
+#   'mcts'        Monte Carlo tree search with random playouts. Option:
+#                   'iterations'  random games per move (default 200000)
+#   'neural_net'  AlphaZero: tree search guided by the network trained with
+#                 train.py. Options:
+#                   'model'        'small', 'medium' or 'large' (default 'medium')
+#                   'simulations'  positions the network looks at per move
+#                                  (default 400; more = stronger and slower)
 #   'random'      random moves
+# Example: 'O': {'type': 'neural_net', 'model': 'medium', 'simulations': 800}
 PLAYERS = {
-    'X': {'type': 'minimax', 'depth': 14, 'time_limit': 2.0},
-    'O': {'type': 'human'},
+    'X': {'type': 'human'},
+    'O': {'type': 'minimax', 'depth': 14, 'time_limit': 2.0},
 }
 STARTING_PLAYER = 'X'
-
-# Weights and size (channels, residual blocks) of the network for 'neural_net'
-MODEL_PATH = os.path.join('models', 'neural_net', 'first_model_weights_short.pth')
-MODEL_ARGS = (64, 4)
 # ------------------------------------------------------------------------
 
-# settings name -> mode name of all_AI.make_move
-AI_MODES = {
-    'minimax': 'best_move',
-    'mcts': 'naiv_MCTC',
-    'neural_net': 'best_nn_move',
-    'random': 'random_move',
-}
-DEFAULT_DEPTH = 11
 TEXT_HEIGHT = 70
-
-
-def create_ai(symbol, settings):
-    """The all_AI object for one player, or None for a human."""
-    player_type = settings['type']
-    if player_type == 'human':
-        return None
-    if player_type not in AI_MODES:
-        raise ValueError(f"Unknown player type '{player_type}' for player {symbol}. "
-                         f"Use 'human' or one of {list(AI_MODES)}.")
-    if player_type == 'neural_net':
-        return all_AI(tic_tac_toe_mapping[symbol], args=MODEL_ARGS, path=MODEL_PATH)
-    return all_AI(tic_tac_toe_mapping[symbol])
-
-
-def ai_move(ai, settings, board):
-    return ai.make_move(board, AI_MODES[settings['type']],
-                        depth=settings.get('depth', DEFAULT_DEPTH),
-                        time_limit=settings.get('time_limit'))
 
 
 def new_board():

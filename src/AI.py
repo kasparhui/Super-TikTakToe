@@ -4,40 +4,74 @@ import math
 import MCTS
 import fast_minimax
 import Tic_Tac_Toe_NN
-import torch
-import os
+
+# player type in the settings (main.py, test_models.py) -> mode of all_AI.make_move
+AI_MODES = {
+    'minimax': 'best_move',
+    'mcts': 'naiv_MCTC',
+    'neural_net': 'best_nn_move',
+    'random': 'random_move',
+}
+DEFAULT_DEPTH = 11             # minimax
+DEFAULT_SIMULATIONS = 400      # neural_net: positions the network looks at per move
+DEFAULT_ITERATIONS = 200000    # mcts: random games per move
+
+
+def create_ai(symbol, settings):
+    """The all_AI object for one player ('X' or 'O'), or None for a human.
+    settings is a dict like {'type': 'minimax', 'depth': 12}, see main.py."""
+    player_type = settings['type']
+    if player_type == 'human':
+        return None
+    if player_type not in AI_MODES:
+        raise ValueError(f"Unknown player type '{player_type}' for player {symbol}. "
+                         f"Use 'human' or one of {list(AI_MODES)}.")
+    ai = all_AI(tic_tac_toe_mapping[symbol], model=settings.get('model', Tic_Tac_Toe_NN.DEFAULT_MODEL))
+    if player_type == 'neural_net':
+        # load it now, so a missing network is noticed at the start and not at the first move
+        ai.load_network(settings.get('simulations', DEFAULT_SIMULATIONS))
+    return ai
+
+
+def ai_move(ai, settings, board):
+    """The move of an AI created with create_ai, as (big field, little field)."""
+    return ai.make_move(board, AI_MODES[settings['type']],
+                        depth=settings.get('depth', DEFAULT_DEPTH),
+                        time_limit=settings.get('time_limit'),
+                        simulations=settings.get('simulations', DEFAULT_SIMULATIONS),
+                        iterations=settings.get('iterations', DEFAULT_ITERATIONS))
+
 
 class all_AI:
-    def __init__(self, player, args = None, path = None):
+    def __init__(self, player, model = Tic_Tac_Toe_NN.DEFAULT_MODEL):
         self.player = player
-        if not (args is None):
-            self.model = Tic_Tac_Toe_NN.UltimateTicTacToeNet(args[0], args[1])
-            if not (path is None):
-                self.model.load_state_dict(torch.load(path))
-            self.model.eval()
+        self.model_name = model     # which trained network 'best_nn_move' uses
+        self.neural_player = None   # loaded when it is needed for the first time
 
-    def make_move(self, board, mode = 'random_move', depth = 11, smart_depth = 100, time_limit = None):
+    def make_move(self, board, mode = 'random_move', depth = DEFAULT_DEPTH, smart_depth = 100, time_limit = None,
+                  simulations = DEFAULT_SIMULATIONS, iterations = DEFAULT_ITERATIONS):
         self.board = copy.deepcopy(board)
         if mode == 'random_move':
             return self.random_move()
         elif mode == 'best_move':
             return self.best_move(depth, smart_depth, time_limit)
         elif mode == 'naiv_MCTC':
-            return self.naiv_MCTC()
+            return self.naiv_MCTC(iterations)
         elif mode == 'best_nn_move':
-            return self.best_nn_move()
+            return self.best_nn_move(simulations)
         else:
-            print('Kein gültiger move')
+            raise ValueError(f"Kein gültiger Modus: '{mode}'")
 
-    def best_nn_move(self):
-        model = self.model
-        self.board.change_perspective()
-        Node = MCTS.AlphaNode(self.board)
-        mcts = MCTS.AlphaMonteCarloTreeSearch(model)
-        probabiltys = mcts.best_move(Node, 250)[0]
-        best_move = np.argmax(probabiltys).item()
-        #print(best_move // 9, best_move % 9)
-        return best_move // 9, best_move % 9
+    def load_network(self, simulations = DEFAULT_SIMULATIONS):
+        model = Tic_Tac_Toe_NN.load_model(self.model_name, 'cpu')
+        self.neural_player = MCTS.NeuralPlayer(model, 'cpu', simulations)
+
+    def best_nn_move(self, simulations = DEFAULT_SIMULATIONS):
+        # AlphaZero: tree search guided by the trained network (see MCTS.py, train.py)
+        if self.neural_player is None or self.neural_player.search.simulations != simulations:
+            self.load_network(simulations)
+        position, value = self.neural_player.best_move(self.board)
+        return position
         
     def straight_count(self, temp_array):
         if ((np.count_nonzero(temp_array == 1) > 0) and (np.count_nonzero(temp_array == -1) > 0)) or (np.count_nonzero(temp_array == 2)>0):
@@ -88,11 +122,10 @@ class all_AI:
         position = actions[np.random.randint(len(actions))]
         return (int(position[0]), int(position[1]))
     
-    def naiv_MCTC(self, iterations = 1000):
-        node = MCTS.Node(self.board)
-        mcts = MCTS.MonteCarloTreeSearch()
-        best_move = mcts.best_move(node, iterations)
-        return best_move[0]
+    def naiv_MCTC(self, iterations = DEFAULT_ITERATIONS):
+        # classic MCTS: many random games decide which move is best
+        position, win_rate = MCTS.pure_mcts_move(self.board, iterations)
+        return position
 
     def possible_moves(self):
     

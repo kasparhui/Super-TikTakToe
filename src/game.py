@@ -2,7 +2,6 @@ import copy
 import random
 import numpy as np
 from constants import *
-from torch import tensor, float32
  
 class Board:
     def __init__(self, board = np.zeros((9,9), dtype=np.int8), playerturn = 1):
@@ -76,44 +75,6 @@ class Board:
         else:
             legal_moves[self.next_move, np.where(self.board[self.next_move] == 0)[0]] = 1
         return legal_moves
-    
-    def get_encoded_state(self):
-        # Set a one on the board where the player can play a legal move
-        possible_moves_board = np.zeros((9, 9))
-        possible_moves = self.possible_moves()
-        for x, y in possible_moves:
-            possible_moves_board[x][y] = 1
-        possible_moves_board = possible_moves_board.reshape(3, 3, 3, 3).transpose(0, 2, 1, 3).reshape(9, 9)
-        
-        # Encode the board
-        transposed_board = self.board.reshape(3, 3, 3, 3).transpose(0, 2, 1, 3).reshape(9, 9)
-        
-        if self.playerturn == 1:
-            encoded_state = np.stack((
-                transposed_board == 1, 
-                transposed_board == 0, 
-                transposed_board == -1, 
-                possible_moves_board
-            )).astype(np.float32)
-        else:
-            encoded_state = np.stack((
-                transposed_board == -1, 
-                transposed_board == 0, 
-                transposed_board == 1, 
-                possible_moves_board
-            )).astype(np.float32)
-
-        encoded_state = tensor(encoded_state, dtype=float32)
-        return encoded_state
-    
-    def change_perspective(self):
-        if self.playerturn == 1:
-            return
-        
-        self.board = -self.board
-        self.won_games = -self.won_games
-        self.won_games = np.where(self.won_games == -2 , 2 , self.won_games)
-        self.playerturn = flip_player(self.playerturn)
 
 def check_rows(little_board):
     first_row = (2 != little_board[0] == little_board[1] == little_board[2] != 0)

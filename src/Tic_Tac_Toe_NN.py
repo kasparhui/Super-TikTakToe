@@ -1,257 +1,178 @@
-# Imports
+"""Neural network for Super TikTakToe (AlphaZero style: one network, two outputs).
+
+Input:  6 planes of 9x9, always seen from the player who is to move
+          0  my pieces
+          1  opponent's pieces
+          2  cells I am allowed to play now
+          3  little boards I have won
+          4  little boards the opponent has won
+          5  little boards that ended in a tie
+        The 9x9 picture is the board as it is drawn on the screen.
+Output: policy  81 numbers (logits), one per cell of the 9x9 picture
+        value   between -1 (I lose) and 1 (I win)
+
+Training is done with train.py, playing with the 'neural_net' player type.
+"""
+import os
+
+import numpy as np
 import torch
 import torch.nn as nn
-import os
-import MCTS
-import game
-import copy
+import torch.nn.functional as F
+
+# The size of the network. Bigger = stronger in the end, but slower to train
+# and slower per move. Every variant has its own weight file in models/.
+MODEL_VARIANTS = {
+    'small':  {'channels': 32, 'blocks': 4},    # a first result in 1-2 hours
+    'medium': {'channels': 64, 'blocks': 6},    # made for one night of training
+    'large':  {'channels': 96, 'blocks': 8},    # for several nights
+}
+DEFAULT_MODEL = 'medium'
+
+INPUT_PLANES = 6
+MODEL_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'models')
+
+# A move is the number  big_field * 9 + little_field  (as in game.Board).
+# MOVE_TO_SPATIAL[move] is where that cell lies in the flattened 9x9 picture.
+MOVE_TO_SPATIAL = np.array([(3 * (b // 3) + c // 3) * 9 + 3 * (b % 3) + c % 3
+                            for b in range(9) for c in range(9)], dtype=np.int64)
+SPATIAL_TO_MOVE = np.argsort(MOVE_TO_SPATIAL)
 
 
-class ConvBlock(nn.Module):
-    def __init__(self, res_block_planes):
-        super(ConvBlock, self).__init__()
-        self.conv1 = nn.Conv2d(4, res_block_planes, 3, stride=1, padding=1)
-        self.bn1 = nn.BatchNorm2d(res_block_planes)
-        self.activation = nn.ReLU()
+class BoardBlock(nn.Module):
+    """Residual block that knows about the structure of the game.
 
-    def forward(self, s):
-        s = s.view(-1, 4, 9, 9)  # batch_size x channels x board_x x board_y
-        s = self.activation(self.bn1(self.conv1(s)))
+    Besides the usual 3x3 convolutions every cell also gets a summary of
+      * its own little board, and
+      * the little board its move sends the opponent to,
+    and those summaries are computed with a view of the whole big board.
+    """
 
-        return s
-
-class ResBlock(nn.Module):
-    def __init__(self, inplanes=64, planes=64, stride=1, downsample=None):
-        super(ResBlock, self).__init__()
-        self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=3, stride=stride,
-                     padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(planes)
-        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride, 
-                     padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(planes)
-        self.activation = nn.ReLU()
+    def __init__(self, channels, context):
+        super().__init__()
+        self.conv1 = nn.Conv2d(channels, channels, 3, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(channels)
+        self.context = nn.Conv2d(channels, context, 3, padding=1)   # works on the 3x3 big board
+        self.own = nn.Conv2d(context, channels, 1, bias=False)
+        self.target = nn.Conv2d(context, channels, 1, bias=False)
+        self.conv2 = nn.Conv2d(channels, channels, 3, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(channels)
+        # Fixed 9 x 81 tables that copy the 9 little-board summaries to the 81 cells.
+        # (As matrices because that is much faster on Apple's graphics chip than repeat().)
+        own_cells = torch.zeros(9, 81)
+        target_cells = torch.zeros(9, 81)
+        for row in range(9):
+            for column in range(9):
+                own_cells[(row // 3) * 3 + column // 3, row * 9 + column] = 1
+                target_cells[(row % 3) * 3 + column % 3, row * 9 + column] = 1
+        self.register_buffer('own_cells', own_cells, persistent=False)
+        self.register_buffer('target_cells', target_cells, persistent=False)
 
     def forward(self, x):
-        residual = x
-        out = self.conv1(x)
-        out = self.activation(self.bn1(out))
-        out = self.conv2(out)
-        out = self.bn2(out)
-        out += residual
-        out = self.activation(out)
-        return out
-    
-class OutBlock(nn.Module):
-    def __init__(self, res_block_planes):
-        super(OutBlock, self).__init__()
-        self.conv = nn.Conv2d(res_block_planes, 1, kernel_size=1) # value head
-        self.bn = nn.BatchNorm2d(1)
-        self.fc1 = nn.Linear(9*9, 81)
-        self.fc2 = nn.Linear(81, 1)
-        
-        self.conv1 = nn.Conv2d(res_block_planes, 16, kernel_size=1) # policy head
-        self.bn1 = nn.BatchNorm2d(16)
-        self.logsoftmax = nn.LogSoftmax(dim=1)
-        self.softmax = nn.Softmax(dim=1)
-        self.fc3 = nn.Linear(9*9*16, 9*9*4)
-        self.fc4 = nn.Linear(9*9*4, 9*9)
+        h = F.relu(self.bn1(self.conv1(x)))
+        big = F.relu(self.context(F.avg_pool2d(h, 3)))              # one vector per little board
+        summary = (self.own(big).flatten(2) @ self.own_cells
+                   + self.target(big).flatten(2) @ self.target_cells)
+        h = self.bn2(self.conv2(h + summary.view(x.shape)))
+        return F.relu(x + h)
 
-        self.activation = nn.ReLU()
-        self.last_activation = nn.Tanh()
-    def forward(self,s):
-        v = self.activation(self.bn(self.conv(s))) # value head
-        v = v.view(-1, 9*9)  # batch_size X channel X height X width
-        v = self.activation(self.fc1(v))
-        v = self.last_activation(self.fc2(v))
-        
-        p = self.activation(self.bn1(self.conv1(s))) # policy head
-        p = p.view(-1, 9*9*16)
-        p = self.activation(self.fc3(p))
-        p = self.fc4(p)
-        p = self.softmax(p)
-        return p, v
-    
+
 class UltimateTicTacToeNet(nn.Module):
-    def __init__(self, res_block_planes = 64, res_block_layers = 4):
-        super(UltimateTicTacToeNet, self).__init__()
-        self.res_block_layers = res_block_layers
-        self.conv = ConvBlock(res_block_planes)
-        for block in range(self.res_block_layers):
-            setattr(self, "res_%i" % block,ResBlock(res_block_planes, res_block_planes))
-        self.outblock = OutBlock(res_block_planes)
-    
-    def forward(self,s):
-        s = self.conv(s)
-        for block in range(self.res_block_layers):
-            s = getattr(self, "res_%i" % block)(s)
-        s = self.outblock(s)
-        return s
+    def __init__(self, channels=64, blocks=6):
+        super().__init__()
+        self.stem = nn.Conv2d(INPUT_PLANES, channels, 3, padding=1, bias=False)
+        # lets the network tell the cells apart (corner of a little board, centre, ...)
+        self.position = nn.Parameter(torch.zeros(1, channels, 9, 9))
+        self.stem_bn = nn.BatchNorm2d(channels)
+        self.blocks = nn.ModuleList([BoardBlock(channels, channels // 2) for _ in range(blocks)])
 
-# Hauptalgorithmus für das Training von AlphaZero
-class AlphaLoss(nn.Module):
-    def __init__(self):
-        super(AlphaLoss, self).__init__()
+        self.policy_conv = nn.Conv2d(channels, 32, 1, bias=False)
+        self.policy_bn = nn.BatchNorm2d(32)
+        self.policy_out = nn.Conv2d(32, 1, 1)
 
-    def forward(self, y_value, value, y_policy, policy):
-        value_error = (value - y_value) ** 2
-        policy_error = torch.sum((-policy * (1e-6 + y_policy.float()).float().log()))
-        #print(value_error,'ve',policy_error,'pe')
-        lamm = 0.5
-        total_error = (value_error.view(-1).float() * lamm + policy_error * (1-lamm)).mean()
-        #print(total_error,'Total error')
-        return total_error
-    
-class AlphaZero:
-    def __init__(self, model):
-        # Initialisiere Parameter für das Training
-        self.model = model
-        self.optimizer = torch.optim.SGD(self.model.parameters(), lr=0.003)
-        self.scheduler = torch.optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=[100, 200, 300, 400], gamma=0.2)
-        if os.path.exists(os.path.join('models', 'neural_net',f'first_model_weights_short.pth')):
-            self.model.load_state_dict(torch.load(os.path.join('models', 'neural_net',f'first_model_weights_short.pth')))
-        if os.path.exists(os.path.join('models', 'optimizer', f'first_model_weights_short.pth')):
-            self.optimizer.load_state_dict(torch.load(os.path.join('models', 'optimizer', f'first_model_weights_short.pth')))
-        if os.path.exists(os.path.join('models', 'scheduler', f'first_model_weights_short.pth')):
-            self.scheduler.load_state_dict(torch.load(os.path.join('models', 'scheduler', f'first_model_weights_short.pth')))
-        self.cuda = torch.cuda.is_available()
-    def self_play(self):
-        # Führe Selbstspiele durch, um Daten für das Training zu generieren
-        import numpy as np
-        memory = []
-        playerturn = 1
-        state = game.Board(playerturn=playerturn)
-        while True:
-            neutral_state = copy.deepcopy(state)
-            neutral_state.change_perspective()
-            node  = MCTS.AlphaNode(neutral_state)
-            mcts = MCTS.AlphaMonteCarloTreeSearch(self.model)
-            action_probs = mcts.best_move(node, 164)[0]
-            memory.append([neutral_state.get_encoded_state(), torch.tensor(action_probs), torch.tensor(state.playerturn)])         
-            action = np.random.choice(81, p=action_probs)
-            
-            state.execute(action)
-            #print(state.won_games)
-            if state.game_is_over:
-                if game.game_is_win(state.won_games)[0]:
-                    value = - state.playerturn
-                else: 
-                    #print(state.won_games)
-                    value = 0
-                #print('value:', value)
-                for i in range(len(memory)):
-                    memory[i][2]*= value
-                return memory
+        self.value_conv = nn.Conv2d(channels, 8, 1, bias=False)
+        self.value_bn = nn.BatchNorm2d(8)
+        self.value_fc1 = nn.Linear(8 * 81, 128)
+        self.value_fc2 = nn.Linear(128, 1)
 
-    def train_neural_net(self, dataset, epoch_start=0, epoch_stop=20, cpu=0):
-        torch.manual_seed(cpu)
-        criterion = AlphaLoss()
-        optimizer = self.optimizer
-        scheduler = self.scheduler
-
-        train_loader = DataLoader(dataset, batch_size=5, shuffle=True, num_workers=0, pin_memory=False)
-        losses_per_epoch = []
-
-        for epoch in range(epoch_start, epoch_stop):
-            total_loss = 0.0
-            losses_per_batch = [100]
-
-            for i, data in enumerate(train_loader, 0):
-                state, policy, value = data
-
-                if self.cuda:
-                    state, policy, value = state.cuda().float(), policy.float().cuda(), value.cuda().float()
-
-                optimizer.zero_grad()
-                policy_pred, value_pred = self.model(state)
-
-                loss = criterion(value_pred, value, policy_pred, policy)
-                #print(value_pred, value, policy_pred, policy)
-                loss.backward()
-                optimizer.step()
-
-                total_loss += loss.item()
-
-                if i % 10 == 9:
-                    '''print(f'Epoch: {epoch + 1}, Data points: {(i + 1) * 30}/{len(dataset)}, Total loss per batch: {total_loss / 10}')
-                    print("Policy:", policy[0].argmax().item(), policy_pred[0].argmax().item())
-                    print("Value:", value[0].item(), value_pred[0, 0].item())'''
-
-                    losses_per_batch.append(total_loss / 10)
-                    total_loss = 0.0
-
-            losses_per_epoch.append(sum(losses_per_batch) / len(losses_per_batch))
-
-            if len(losses_per_epoch) > 100:
-                if abs(sum(losses_per_epoch[-4:-1]) / 3 - sum(losses_per_epoch[-16:-13]) / 3) <= 0.01:
-                    break
-        #print(losses_per_epoch)
-
-    def worker(self,_):
-        try:
-            return self.self_play()
-        except KeyboardInterrupt:
-            print('KeyboardInterrupt top')
-            return []
-
-    def learn(self, iterations = 5):
-            # Führe das Training durch
-        for iteration in range(iterations):
-            print('iteraton:',iteration)
-            try:
-                self.model.eval()
-                start = time.perf_counter()
-                with Pool(8) as p:
-                    memory = p.map(self.worker, range(8))
-                memory = [item for sublist in memory for item in sublist]
-                print('lenght memory:' ,len(memory))
-                print(f'elapsed time: {time.perf_counter() - start}')
-                print(f'train iteration {iteration}')
-                if self.cuda:
-                    self.model.cuda()
-                self.model.train()        
-                start = time.perf_counter()
-                self.train_neural_net(memory,0,10)
-                # one scheduler step per training iteration: the milestones
-                # (100, 200, 300, 400) count iterations, not epochs
-                self.scheduler.step()
-                print(f'elapsed time: {time.perf_counter() - start}')
-                if self.cuda:
-                    self.model.cpu()
-            except KeyboardInterrupt:
-                print('KeyboardInterrupt bottom')
-                break
-                #except Exception as e:
-                    #print('Error:', str(e))
-                    #break
-            print(f'finito iteration {iteration}')
-            torch.save(self.model.state_dict(), os.path.join('models', 'neural_net', f'first_model_weights_short.pth'))
-            torch.save(self.optimizer.state_dict(), os.path.join('models', 'optimizer', f'first_model_weights_short.pth'))
-            torch.save(self.scheduler.state_dict(), os.path.join('models', 'scheduler', f'first_model_weights_short.pth'))
-            print('alles wurde gesichert')
-        torch.save(self.model.state_dict(), os.path.join('models', 'neural_net', f'first_model_weights_short.pth'))
-        torch.save(self.optimizer.state_dict(), os.path.join('models', 'optimizer', f'first_model_weights_short.pth'))
-        torch.save(self.scheduler.state_dict(), os.path.join('models', 'scheduler', f'first_model_weights_short.pth'))
-        print('alles wurde gesichert!!')
-# Beispiel für die Verwendung
-if __name__ == "__main__":
-    # Beispiel für die Nutzung der implementierten Klassen
-    import game  
-    import numpy as np
-    import AI
-    import time
-    from torch.utils.data import Dataset, DataLoader
-    import test_models
-    from multiprocessing import Pool
-
-    cuda = torch.cuda.is_available()
-    cuda = False
-
-    model = UltimateTicTacToeNet()
-    if cuda:
-        model = model.cuda()
-    TicTacToeZero = AlphaZero(model)
-
-    TicTacToeZero.learn(1000)
+    def forward(self, x):
+        """x: batch x 6 x 9 x 9  ->  (policy logits: batch x 81, value: batch)"""
+        x = F.relu(self.stem_bn(self.stem(x) + self.position))
+        for block in self.blocks:
+            x = block(x)
+        policy = F.relu(self.policy_bn(self.policy_conv(x)))
+        policy = self.policy_out(policy).flatten(1)
+        value = F.relu(self.value_bn(self.value_conv(x))).flatten(1)
+        value = F.relu(self.value_fc1(value))
+        value = torch.tanh(self.value_fc2(value)).squeeze(1)
+        return policy, value
 
 
-    
+def create_model(variant=DEFAULT_MODEL):
+    if variant not in MODEL_VARIANTS:
+        raise ValueError(f"Unknown model '{variant}'. Use one of {list(MODEL_VARIANTS)}.")
+    return UltimateTicTacToeNet(**MODEL_VARIANTS[variant])
+
+
+def choose_device(device='auto'):
+    """'auto' takes the graphics chip if there is one (Apple: mps, Nvidia: cuda)."""
+    if device != 'auto':
+        return torch.device(device)
+    if torch.backends.mps.is_available():
+        return torch.device('mps')
+    if torch.cuda.is_available():
+        return torch.device('cuda')
+    return torch.device('cpu')
+
+
+def checkpoint_path(variant=DEFAULT_MODEL):
+    return os.path.join(MODEL_DIR, f'alphazero_{variant}.pt')
+
+
+def save_checkpoint(path, model, optimizer=None, **extra):
+    """Saves weights (+ optimizer and anything else) without ever leaving a half written file."""
+    data = {'model': {k: v.cpu() for k, v in model.state_dict().items()}}
+    if optimizer is not None:
+        data['optimizer'] = optimizer.state_dict()
+    data.update(extra)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    torch.save(data, path + '.tmp')
+    os.replace(path + '.tmp', path)
+
+
+def load_model(variant=DEFAULT_MODEL, device='cpu'):
+    """The trained network of this variant, ready to play."""
+    if variant not in MODEL_VARIANTS:
+        raise ValueError(f"Unknown model '{variant}'. Use one of {list(MODEL_VARIANTS)}.")
+    path = checkpoint_path(variant)
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f"There is no trained '{variant}' network yet ({path}). "
+            f"Train one first: set MODEL = '{variant}' in src/train.py and run it.")
+    model = create_model(variant)
+    model.load_state_dict(torch.load(path, map_location='cpu')['model'])
+    model.to(device)
+    model.eval()
+    return model
+
+
+def predict(model, planes, device):
+    """planes: numpy batch x 6 x 9 x 9  ->  numpy (logits: batch x 81, values: batch)"""
+    with torch.inference_mode():
+        logits, values = model(torch.from_numpy(planes).to(device))
+    return logits.float().cpu().numpy(), values.float().cpu().numpy()
+
+
+def random_symmetry(planes, policy):
+    """The same random rotation / mirroring for a batch of positions and their
+    policy targets. The game is symmetric under all 8 of them."""
+    turns = int(torch.randint(4, (1,)))
+    mirror = bool(torch.randint(2, (1,)))
+    policy = policy.view(-1, 9, 9)
+    if turns:
+        planes = torch.rot90(planes, turns, (2, 3))
+        policy = torch.rot90(policy, turns, (1, 2))
+    if mirror:
+        planes = planes.flip(3)
+        policy = policy.flip(2)
+    return planes, policy.reshape(-1, 81)
