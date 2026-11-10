@@ -12,6 +12,7 @@ and start the script again later - it continues where it stopped.
 import csv
 import os
 import re
+import shutil
 import time
 from multiprocessing import Pool
 
@@ -61,6 +62,8 @@ EVAL_DEPTHS = (6, 9, 11)    # depths of the minimax opponents (only to measure, 
 EVAL_GAMES = 40             # games against each of them (more games = less random up and down)
 EVAL_SIMULATIONS = 100      # search size of the network in these games
 SAVE_BUFFER_EVERY = 5       # the collected positions are large, so they are saved less often
+SNAPSHOT_EVERY = 4          # every this many iterations a copy of the network is kept in
+                            # models/snapshots/, so you can go back to an earlier one (0 = never)
 # ------------------------------------------------------------------------
 
 
@@ -294,6 +297,10 @@ def paths(variant):
     return base + '.pt', base + '_buffer.npz', base + '_log.csv'
 
 
+def snapshot_path(variant, iteration):
+    return os.path.join(NN.MODEL_DIR, 'snapshots', f'alphazero_{variant}_iteration{iteration:04d}.pt')
+
+
 def write_log(path, row):
     """Adds a row to the log. If the columns changed (for example other
     EVAL_DEPTHS), the file is rewritten so that old and new rows fit together."""
@@ -381,6 +388,9 @@ def main():
             iteration += 1
             total_games += stats['games']
             save(with_buffer=iteration % SAVE_BUFFER_EVERY == 0)
+            if SNAPSHOT_EVERY and iteration % SNAPSHOT_EVERY == 0:
+                os.makedirs(os.path.dirname(snapshot_path(MODEL, iteration)), exist_ok=True)
+                shutil.copyfile(checkpoint_file, snapshot_path(MODEL, iteration))
 
             row = {'iteration': iteration, 'games': total_games, 'positions': stats['positions'],
                    'policy_loss': round(policy_loss, 4), 'value_loss': round(value_loss, 4),

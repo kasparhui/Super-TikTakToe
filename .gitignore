@@ -162,3 +162,4 @@ cython_debug/
 # AlphaZero training: collected positions (large, only needed to continue training)
 models/*_buffer.npz
 models/*.tmp
+models/snapshots/
