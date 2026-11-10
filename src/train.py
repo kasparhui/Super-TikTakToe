@@ -11,6 +11,7 @@ and start the script again later - it continues where it stopped.
 """
 import csv
 import os
+import re
 import time
 from multiprocessing import Pool
 
@@ -47,17 +48,17 @@ BUFFER_SIZE = 300000        # positions kept from earlier iterations
 
 # Warm start: before the first iteration the network learns from games of the
 # minimax AI (your evaluation function), so it does not start from zero.
-# Set WARM_START = False for pure AlphaZero self-play.
-WARM_START = True
+# WARM_START = False is pure AlphaZero self-play: the network never sees minimax.
+WARM_START = False
 WARM_START_GAMES = 4000
 WARM_START_DEPTH = 5        # depth of the minimax that plays these games
 WARM_START_RANDOM = 0.2     # share of random moves in these games, for variety
 WARM_START_EPOCHS = 2
 
 # Progress check: every EVAL_EVERY iterations the network plays against minimax
-EVAL_EVERY = 3
-EVAL_DEPTHS = (3, 6, 9)     # depths of the minimax opponents
-EVAL_GAMES = 20             # games against each of them
+EVAL_EVERY = 4
+EVAL_DEPTHS = (6, 9, 11)    # depths of the minimax opponents (only to measure, nothing is learned from them)
+EVAL_GAMES = 40             # games against each of them (more games = less random up and down)
 EVAL_SIMULATIONS = 100      # search size of the network in these games
 SAVE_BUFFER_EVERY = 5       # the collected positions are large, so they are saved less often
 # ------------------------------------------------------------------------
@@ -239,7 +240,7 @@ def train(model, optimizer, buffer, device, steps):
 def evaluate(model, device, depth, games=EVAL_GAMES, simulations=EVAL_SIMULATIONS):
     """The network (with tree search) against minimax of the given depth.
     Half of the games as X, half as O, each after 2 random opening moves.
-    Returns the share of points for the network (win = 1, tie = 0.5)."""
+    Returns (wins, ties, losses) of the network."""
     model.eval()
     search = MCTS.BatchedSearch(model, device, games, simulations)
     boards = [game.Board(playerturn=1) for _ in range(games)]
@@ -260,13 +261,28 @@ def evaluate(model, device, depth, games=EVAL_GAMES, simulations=EVAL_SIMULATION
         for g, board in enumerate(boards):
             if not board.game_is_over and board.playerturn != net_side[g]:
                 board.execute(fast_minimax.best_move(board, depth)[1])
-    points = 0.0
+    wins = ties = losses = 0
     for g, board in enumerate(boards):
-        if game.game_is_win(board.won_games)[0]:
-            points += 1.0 if -board.playerturn == net_side[g] else 0.0
+        if not game.game_is_win(board.won_games)[0]:
+            ties += 1
+        elif -board.playerturn == net_side[g]:      # the player who moved last has won
+            wins += 1
         else:
-            points += 0.5
-    return points / games
+            losses += 1
+    return wins, ties, losses
+
+
+def score(wins, ties, losses):
+    """Share of points: win = 1, tie = 0.5."""
+    return (wins + 0.5 * ties) / (wins + ties + losses)
+
+
+def test_columns(depth):
+    """Names of the log columns for the test against minimax of this depth."""
+    return [f'vs_minimax_{depth}', f'wins_{depth}', f'ties_{depth}', f'losses_{depth}']
+
+
+TEST_COLUMN = re.compile(r'(vs_minimax|wins|ties|losses)_(\d+)$')
 
 
 # ----------------------------------------------------------------------------
@@ -279,12 +295,32 @@ def paths(variant):
 
 
 def write_log(path, row):
-    new_file = not os.path.exists(path)
-    with open(path, 'a', newline='') as file:
-        writer = csv.DictWriter(file, fieldnames=list(row))
-        if new_file:
-            writer.writeheader()
-        writer.writerow(row)
+    """Adds a row to the log. If the columns changed (for example other
+    EVAL_DEPTHS), the file is rewritten so that old and new rows fit together."""
+    fields, rows = list(row), []
+    if os.path.exists(path):
+        with open(path, newline='') as file:
+            reader = csv.DictReader(file)
+            old_fields = reader.fieldnames or []
+            if old_fields == fields:
+                rows = None                     # same columns: just append
+            else:
+                rows = list(reader)
+                fields = old_fields + [f for f in fields if f not in old_fields]
+                depths = sorted({int(TEST_COLUMN.match(f).group(2))
+                                 for f in fields if TEST_COLUMN.match(f)})
+                tests = [f for depth in depths for f in test_columns(depth) if f in fields]
+                fields = ([f for f in fields if f not in tests and f != 'seconds']
+                          + tests + ['seconds'])
+    if rows is None:
+        with open(path, 'a', newline='') as file:
+            csv.DictWriter(file, fieldnames=fields).writerow(row)
+        return
+    with open(path + '.tmp', 'w', newline='') as file:
+        writer = csv.DictWriter(file, fieldnames=fields, restval='')
+        writer.writeheader()
+        writer.writerows(rows + [row])
+    os.replace(path + '.tmp', path)
 
 
 def main():
@@ -329,8 +365,9 @@ def main():
             policy_loss, value_loss = train(model, optimizer, buffer, device, steps)
             print(f'  learned from {len(data[2])} positions in {time.perf_counter() - start:.0f}s '
                   f'| policy loss {policy_loss:.3f}, value loss {value_loss:.3f}')
-            scores = {depth: evaluate(model, device, depth) for depth in EVAL_DEPTHS}
-            print('  against minimax: ' + ', '.join(f'depth {d}: {s:.0%}' for d, s in scores.items()))
+            results = {depth: evaluate(model, device, depth) for depth in EVAL_DEPTHS}
+            print('  against minimax (wins-ties-losses): ' + ', '.join(
+                f'depth {d}: {score(*r):.0%} ({r[0]}-{r[1]}-{r[2]})' for d, r in results.items()))
             warm_started = True
             save(with_buffer=True)
 
@@ -351,12 +388,15 @@ def main():
             line = (f"Iteration {iteration}: {stats['games']} games, {stats['positions']} positions "
                     f"in {play_time:.0f}s | policy loss {policy_loss:.3f}, value loss {value_loss:.3f}")
             for depth in EVAL_DEPTHS:
-                row[f'vs_minimax_{depth}'] = ''
+                row.update(dict.fromkeys(test_columns(depth), ''))
             if iteration % EVAL_EVERY == 0:
+                parts = []
                 for depth in EVAL_DEPTHS:
-                    row[f'vs_minimax_{depth}'] = evaluate(model, device, depth)
-                line += ' | against minimax: ' + ', '.join(
-                    f"depth {d}: {row[f'vs_minimax_{d}']:.0%}" for d in EVAL_DEPTHS)
+                    result = evaluate(model, device, depth)
+                    row.update(zip(test_columns(depth), (score(*result),) + result))
+                    parts.append(f'depth {depth}: {score(*result):.0%} '
+                                 f'({result[0]}-{result[1]}-{result[2]})')
+                line += ' | against minimax (wins-ties-losses): ' + ', '.join(parts)
             row['seconds'] = round(time.perf_counter() - start)
             write_log(log_file, row)
             print(line, flush=True)
