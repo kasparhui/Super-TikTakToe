@@ -13,6 +13,7 @@ import csv
 import os
 import re
 import shutil
+import signal
 import time
 from multiprocessing import Pool
 
@@ -34,7 +35,7 @@ DEVICE = 'auto'             # 'auto', 'mps' (Apple), 'cuda' (Nvidia) or 'cpu'
 # Self-play
 GAMES_PER_ITERATION = 512   # games the network plays against itself per iteration
 PARALLEL_GAMES = 256        # how many of them run at the same time
-SIMULATIONS = 200           # positions the search looks at per move
+SIMULATIONS = 400           # positions the search looks at per move
 TEMPERATURE_MOVES = 20      # for this many moves a game picks its moves with some randomness
 NOISE_WEIGHT = 0.25         # random noise on the first move of every search (0 = none)
 NOISE_ALPHA = 0.6
@@ -42,10 +43,16 @@ VALUE_MIX = 0.5             # value target: 0 = only who won, 1 = only what the 
 
 # Learning
 BATCH_SIZE = 256
-LEARNING_RATE = 1e-3
+LEARNING_RATE = 1e-3        # how big the learning steps are at the beginning
+# Learning rate decay: smaller steps later, for the fine tuning.
+# {after this many iterations: learning rate from then on}
+LEARNING_RATE_DECAY = {132: 3e-4, 200: 1e-4}
 WEIGHT_DECAY = 1e-4
 REPLAY_RATIO = 4            # how often every new position is used for learning on average
-BUFFER_SIZE = 300000        # positions kept from earlier iterations
+BUFFER_SIZE = 300000        # positions kept from earlier iterations (about 11 iterations)
+# Later the network changes slowly, so older games stay good lessons and more are kept.
+# {after this many iterations: positions kept from then on}
+BUFFER_GROWTH = {200: 600000}
 
 # Warm start: before the first iteration the network learns from games of the
 # minimax AI (your evaluation function), so it does not start from zero.
@@ -58,8 +65,9 @@ WARM_START_EPOCHS = 2
 
 # Progress check: every EVAL_EVERY iterations the network plays against minimax
 EVAL_EVERY = 4
-EVAL_DEPTHS = (6, 9, 11)    # depths of the minimax opponents (only to measure, nothing is learned from them)
-EVAL_GAMES = 40             # games against each of them (more games = less random up and down)
+EVAL_DEPTHS = (9, 11, 13)   # depths of the minimax opponents (only to measure, nothing is learned from them)
+EVAL_GAMES = 40             # games against each of them, must be even (more games = less random up and down)
+EVAL_PROCESSES = 8          # the minimax moves of these games are computed in parallel
 EVAL_SIMULATIONS = 100      # search size of the network in these games
 SAVE_BUFFER_EVERY = 5       # the collected positions are large, so they are saved less often
 SNAPSHOT_EVERY = 4          # every this many iterations a copy of the network is kept in
@@ -88,6 +96,16 @@ class ReplayBuffer:
             self.value[index] = value[chunk]
             self.position = (self.position + n) % self.capacity
             self.size = min(self.capacity, self.size + n)
+
+    def resize(self, capacity):
+        """Changes how many positions are kept. The newest ones stay."""
+        order = np.arange(self.size)
+        if self.size == self.capacity:      # full: the oldest position is at self.position
+            order = (self.position + order) % self.size
+        order = order[-capacity:]
+        planes, policy, value = self.planes[order], self.policy[order], self.value[order]
+        self.__init__(capacity)
+        self.add(planes, policy, value)
 
     def sample(self, batch_size, device):
         index = np.random.randint(0, self.size, batch_size)
@@ -240,18 +258,35 @@ def train(model, optimizer, buffer, device, steps):
 # progress check
 # ----------------------------------------------------------------------------
 
-def evaluate(model, device, depth, games=EVAL_GAMES, simulations=EVAL_SIMULATIONS):
+def _test_worker():
+    signal.signal(signal.SIGINT, signal.SIG_IGN)            # Ctrl+C is handled by the main process
+    fast_minimax.best_move(game.Board(playerturn=1), 2)     # compiles the search in this process
+
+
+def _minimax_move(job):
+    board, depth = job
+    return fast_minimax.best_move(board, depth)[1]
+
+
+def evaluate(model, device, depth, games=EVAL_GAMES, simulations=EVAL_SIMULATIONS, pool=None):
     """The network (with tree search) against minimax of the given depth.
-    Half of the games as X, half as O, each after 2 random opening moves.
+    Every opening (2 random moves) is played twice, with the network as X and as O.
+    With a pool the minimax moves of the games are computed in parallel.
     Returns (wins, ties, losses) of the network."""
     model.eval()
     search = MCTS.BatchedSearch(model, device, games, simulations)
     boards = [game.Board(playerturn=1) for _ in range(games)]
     net_side = [1 if g % 2 == 0 else -1 for g in range(games)]
-    for board in boards:
-        for _ in range(2):
-            moves = board.possible_moves()
-            board.execute(moves[np.random.randint(len(moves))])
+    for g, board in enumerate(boards):
+        if g % 2 == 0:
+            opening = []
+            for _ in range(2):
+                moves = board.possible_moves()
+                opening.append(moves[np.random.randint(len(moves))])
+                board.execute(opening[-1])
+        else:                       # the same opening again, with the sides swapped
+            for move in opening:
+                board.execute(move)
     while not all(board.game_is_over for board in boards):
         active = np.array([not board.game_is_over and board.playerturn == net_side[g]
                            for g, board in enumerate(boards)])
@@ -261,9 +296,12 @@ def evaluate(model, device, depth, games=EVAL_GAMES, simulations=EVAL_SIMULATION
             counts, _ = search.search(active)
             for g in np.flatnonzero(active):
                 boards[g].execute(int(np.argmax(counts[g])))
-        for g, board in enumerate(boards):
-            if not board.game_is_over and board.playerturn != net_side[g]:
-                board.execute(fast_minimax.best_move(board, depth)[1])
+        waiting = [g for g, board in enumerate(boards)
+                   if not board.game_is_over and board.playerturn != net_side[g]]
+        jobs = [(boards[g], depth) for g in waiting]
+        answers = pool.map(_minimax_move, jobs) if pool else map(_minimax_move, jobs)
+        for g, move in zip(waiting, answers):
+            boards[g].execute(move)
     wins = ties = losses = 0
     for g, board in enumerate(boards):
         if not game.game_is_win(board.won_games)[0]:
@@ -291,6 +329,26 @@ TEST_COLUMN = re.compile(r'(vs_minimax|wins|ties|losses)_(\d+)$')
 # ----------------------------------------------------------------------------
 # main loop
 # ----------------------------------------------------------------------------
+
+def _scheduled(start, changes, iteration):
+    """The value of a setting after `iteration` finished iterations: `start`, or the
+    newest entry of {after this many iterations: value} that is reached."""
+    value = start
+    for after, later in sorted(changes.items()):
+        if iteration >= after:
+            value = later
+    return value
+
+
+def learning_rate(iteration):
+    """The learning rate for the iteration that follows after `iteration` finished ones."""
+    return _scheduled(LEARNING_RATE, LEARNING_RATE_DECAY, iteration)
+
+
+def buffer_size(iteration):
+    """How many positions are kept for the iteration that follows."""
+    return _scheduled(BUFFER_SIZE, BUFFER_GROWTH, iteration)
+
 
 def paths(variant):
     base = NN.checkpoint_path(variant)[:-3]
@@ -348,10 +406,12 @@ def main():
         iteration = checkpoint.get('iteration', 0)
         total_games = checkpoint.get('total_games', 0)
         warm_started = checkpoint.get('warm_started', iteration > 0)
+        buffer = ReplayBuffer(buffer_size(iteration))
         if os.path.exists(buffer_file):
             buffer.load(buffer_file)
         print(f"Continuing '{MODEL}' network after iteration {iteration} "
-              f"({total_games} games so far, {buffer.size} positions in memory) on {device}")
+              f"({total_games} games so far, {buffer.size} positions in memory) on {device}, "
+              f"{SIMULATIONS} simulations per move, learning rate {learning_rate(iteration):g}")
     else:
         parameters = sum(p.numel() for p in model.parameters())
         print(f"New '{MODEL}' network ({parameters / 1e6:.2f} million parameters) on {device}")
@@ -382,8 +442,14 @@ def main():
             start = time.perf_counter()
             data, stats = self_play(model, device, GAMES_PER_ITERATION)
             play_time = time.perf_counter() - start
+            if buffer.capacity != buffer_size(iteration):
+                buffer.resize(buffer_size(iteration))
+                print(f'From now on the last {buffer.capacity} positions are kept.')
             buffer.add(*data)
             steps = max(1, REPLAY_RATIO * stats['positions'] // BATCH_SIZE)
+            rate = learning_rate(iteration)
+            for group in optimizer.param_groups:
+                group['lr'] = rate
             policy_loss, value_loss = train(model, optimizer, buffer, device, steps)
             iteration += 1
             total_games += stats['games']
@@ -394,18 +460,21 @@ def main():
 
             row = {'iteration': iteration, 'games': total_games, 'positions': stats['positions'],
                    'policy_loss': round(policy_loss, 4), 'value_loss': round(value_loss, 4),
-                   'x_wins': stats['x_wins'], 'o_wins': stats['o_wins'], 'ties': stats['ties']}
+                   'x_wins': stats['x_wins'], 'o_wins': stats['o_wins'], 'ties': stats['ties'],
+                   'learning_rate': rate, 'simulations': SIMULATIONS}
             line = (f"Iteration {iteration}: {stats['games']} games, {stats['positions']} positions "
-                    f"in {play_time:.0f}s | policy loss {policy_loss:.3f}, value loss {value_loss:.3f}")
+                    f"in {play_time:.0f}s | policy loss {policy_loss:.3f}, value loss {value_loss:.3f}"
+                    f" | learning rate {rate:g}")
             for depth in EVAL_DEPTHS:
                 row.update(dict.fromkeys(test_columns(depth), ''))
             if iteration % EVAL_EVERY == 0:
                 parts = []
-                for depth in EVAL_DEPTHS:
-                    result = evaluate(model, device, depth)
-                    row.update(zip(test_columns(depth), (score(*result),) + result))
-                    parts.append(f'depth {depth}: {score(*result):.0%} '
-                                 f'({result[0]}-{result[1]}-{result[2]})')
+                with Pool(EVAL_PROCESSES, initializer=_test_worker) as pool:
+                    for depth in EVAL_DEPTHS:
+                        result = evaluate(model, device, depth, pool=pool)
+                        row.update(zip(test_columns(depth), (score(*result),) + result))
+                        parts.append(f'depth {depth}: {score(*result):.0%} '
+                                     f'({result[0]}-{result[1]}-{result[2]})')
                 line += ' | against minimax (wins-ties-losses): ' + ', '.join(parts)
             row['seconds'] = round(time.perf_counter() - start)
             write_log(log_file, row)
