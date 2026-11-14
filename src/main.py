@@ -23,8 +23,8 @@ from draw_game import drawGameState
 #   'random'      random moves
 # Example: 'O': {'type': 'neural_net', 'model': 'medium', 'simulations': 800}
 PLAYERS = {
-    'X': {'type': 'human'},
-    'O': {'type': 'minimax', 'depth': 14, 'time_limit': 2.0},
+    'O': {'type': 'human'},
+    'X': {'type': 'neural_net', 'model': 'medium', 'simulations': 4000},
 }
 STARTING_PLAYER = 'X'
 # ------------------------------------------------------------------------

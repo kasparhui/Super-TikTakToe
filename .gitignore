@@ -164,3 +164,6 @@ models/*_buffer.npz
 models/*.tmp
 models/snapshots/
 models/pretest/
+
+# macOS
+.DS_Store
