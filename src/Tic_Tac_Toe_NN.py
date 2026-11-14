@@ -185,11 +185,20 @@ def predict(model, planes, device):
     with torch.inference_mode(), torch.autocast('cuda', dtype=torch.float16, enabled=half):
         logits, values = model(x)
     logits, values = logits.float().cpu().numpy(), values.float().cpu().numpy()
-    if half and not (np.isfinite(logits).all() and np.isfinite(values).all()):
-        # a number got too big for half precision: ask again in full precision
+    if half:
+        logits, values = _repair(model, x, logits, values)
+    return logits, values
+
+
+def _repair(model, x, logits, values):
+    """In a rare position a number gets too big for half precision and the answer is not a number.
+    Only those positions are asked again, in full precision."""
+    broken = ~(np.isfinite(logits).all(axis=1) & np.isfinite(values))
+    if broken.any():
         with torch.inference_mode():
-            logits, values = model(x)
-        logits, values = logits.float().cpu().numpy(), values.float().cpu().numpy()
+            again_logits, again_values = model(x[torch.from_numpy(broken).to(x.device)])
+        logits[broken] = again_logits.float().cpu().numpy()
+        values[broken] = again_values.float().cpu().numpy()
     return logits, values
 
 
