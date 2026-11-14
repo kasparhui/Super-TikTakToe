@@ -39,7 +39,8 @@ DEVICE = 'auto'             # 'auto', 'mps' (Apple), 'cuda' (Nvidia) or 'cpu'
 
 # Self-play
 GAMES_PER_ITERATION = 512   # games the network plays against itself per iteration
-PARALLEL_GAMES = 256        # how many of them run at the same time
+PARALLEL_GAMES = 512        # how many of them run at the same time (512 is much faster on Colab's L4;
+                            # on a Mac 256 is slightly better)
 SIMULATIONS = 200           # positions the search looks at per move at the beginning
 # A young network learns as much from cheap games; later the games get more careful.
 # {after this many iterations: simulations per move from then on}
@@ -54,13 +55,13 @@ BATCH_SIZE = 256
 LEARNING_RATE = 1e-3        # how big the learning steps are at the beginning
 # Learning rate decay: smaller steps later, for the fine tuning.
 # {after this many iterations: learning rate from then on}
-LEARNING_RATE_DECAY = {120: 3e-4, 200: 1e-4}
+LEARNING_RATE_DECAY = {80: 3e-4, 160: 1e-4}
 WEIGHT_DECAY = 1e-4
 REPLAY_RATIO = 4            # how often every new position is used for learning on average
 BUFFER_SIZE = 300000        # positions kept from earlier iterations (about 11 iterations)
 # Later the network changes slowly, so older games stay good lessons and more are kept.
 # {after this many iterations: positions kept from then on}
-BUFFER_GROWTH = {200: 600000}
+BUFFER_GROWTH = {160: 600000}
 
 # Warm start: before the first iteration the network learns from games of the
 # minimax AI (your evaluation function), so it does not start from zero.
@@ -78,6 +79,13 @@ EVAL_DEPTHS = (9, 11, 13)   # depths of the minimax opponents (only to measure, 
 EVAL_GAMES = 40             # games against each of them, must be even (more games = less random up and down)
 EVAL_PROCESSES = 8          # the minimax moves of these games are computed in parallel
 EVAL_SIMULATIONS = 100      # search size of the network in these games
+# Yardstick: every REFERENCE_EVERY iterations the network plays against a finished network
+# (always the same openings, from both sides). It needs only the graphics card. The file of that
+# network (models/alphazero_<REFERENCE>.pt) must be in the models folder; without it the check is skipped.
+REFERENCE = 'medium'        # which finished network (None = no such check)
+REFERENCE_EVERY = 4
+REFERENCE_GAMES = 64        # must be even
+REFERENCE_SIMULATIONS = 100 # search size of both networks in these games
 SAVE_BUFFER_EVERY = 5       # the collected positions are large, so they are saved less often
 SNAPSHOT_EVERY = 4          # every this many iterations a copy of the network is kept in
                             # models/snapshots/, so you can go back to an earlier one (0 = never)
@@ -322,6 +330,27 @@ def evaluate(model, device, depth, games=EVAL_GAMES, simulations=EVAL_SIMULATION
     return wins, ties, losses
 
 
+def against_reference(model, reference, device):
+    """The network against a finished network, both with tree search and without randomness.
+    The openings (2 moves) are the same in every check, each played from both sides.
+    Returns (wins, ties, losses) of the network."""
+    import test_networks
+    random = np.random.RandomState(0)
+    games = []
+    for _ in range(REFERENCE_GAMES // 2):
+        board, opening = game.Board(playerturn=1), []
+        for _ in range(2):
+            moves = board.possible_moves()
+            opening.append(moves[random.randint(len(moves))])
+            board.execute(opening[-1])
+        games += [(opening, 1), (opening, -1)]
+    model.eval()
+    search = MCTS.BatchedSearch(model, device, len(games), REFERENCE_SIMULATIONS)
+    other = MCTS.BatchedSearch(reference, device, len(games), REFERENCE_SIMULATIONS)
+    results = [result for result, _ in test_networks.play_batch(search, other, games)]
+    return tuple(results.count(r) for r in test_networks.RESULTS)
+
+
 def score(wins, ties, losses):
     """Share of points: win = 1, tie = 0.5."""
     return (wins + 0.5 * ties) / (wins + ties + losses)
@@ -430,6 +459,15 @@ def main():
         parameters = sum(p.numel() for p in model.parameters())
         print(f"New '{MODEL}' network ({parameters / 1e6:.2f} million parameters) on {device}")
 
+    reference = None
+    if REFERENCE and REFERENCE != MODEL:
+        if os.path.exists(NN.checkpoint_path(REFERENCE)):
+            reference = NN.load_model(REFERENCE, device)
+        else:
+            print(f"No finished '{REFERENCE}' network in the models folder "
+                  f'({NN.checkpoint_path(REFERENCE)}): the check against it is skipped.')
+    reference_columns = [f'vs_{REFERENCE}', f'wins_{REFERENCE}', f'ties_{REFERENCE}', f'losses_{REFERENCE}']
+
     def save(with_buffer):
         NN.save_checkpoint(checkpoint_file, model, optimizer, variant=MODEL,
                            iteration=iteration, total_games=total_games, warm_started=warm_started)
@@ -491,6 +529,13 @@ def main():
                         parts.append(f'depth {depth}: {score(*result):.0%} '
                                      f'({result[0]}-{result[1]}-{result[2]})')
                 line += ' | against minimax (wins-ties-losses): ' + ', '.join(parts)
+            if reference is not None:
+                row.update(dict.fromkeys(reference_columns, ''))
+                if iteration % REFERENCE_EVERY == 0:
+                    result = against_reference(model, reference, device)
+                    row.update(zip(reference_columns, (score(*result),) + result))
+                    line += (f" | against '{REFERENCE}' (wins-ties-losses): {score(*result):.0%} "
+                             f'({result[0]}-{result[1]}-{result[2]})')
             row['seconds'] = round(time.perf_counter() - start)
             write_log(log_file, row)
             print(line, flush=True)
