@@ -84,7 +84,7 @@ EVAL_SIMULATIONS = 100      # search size of the network in these games
 # network (models/alphazero_<REFERENCE>.pt) must be in the models folder; without it the check is skipped.
 REFERENCE = 'medium'        # which finished network (None = no such check)
 REFERENCE_EVERY = 4
-REFERENCE_GAMES = 64        # must be even
+REFERENCE_GAMES = 256       # must be even; all are played at the same time
 REFERENCE_SIMULATIONS = 100 # search size of both networks in these games
 SAVE_BUFFER_EVERY = 5       # the collected positions are large, so they are saved less often
 SNAPSHOT_EVERY = 4          # every this many iterations a copy of the network is kept in
@@ -351,6 +351,35 @@ def against_reference(model, reference, device):
     return tuple(results.count(r) for r in test_networks.RESULTS)
 
 
+def repeat_checks(reference, device, log_file, columns):
+    """Checks against the finished network that were played with another number of games than
+    REFERENCE_GAMES (or not at all) are played again with the snapshots of those iterations,
+    and the log is corrected."""
+    with open(log_file, newline='') as file:
+        reader = csv.DictReader(file)
+        fields, rows = list(reader.fieldnames or []), list(reader)
+    if columns[0] not in fields:
+        place = fields.index('seconds') if 'seconds' in fields else len(fields)
+        fields[place:place] = columns
+    for row in rows:
+        iteration = int(row['iteration'])
+        played = sum(int(float(row[c])) for c in columns[1:] if row.get(c) not in ('', None))
+        if (iteration % REFERENCE_EVERY or played == REFERENCE_GAMES
+                or not os.path.exists(snapshot_path(MODEL, iteration))):
+            continue
+        start = time.perf_counter()
+        result = against_reference(NN.load_model(MODEL, device, iteration), reference, device)
+        row.update(zip(columns, (score(*result),) + result))
+        with open(log_file + '.tmp', 'w', newline='') as file:
+            writer = csv.DictWriter(file, fieldnames=fields, restval='')
+            writer.writeheader()
+            writer.writerows(rows)
+        os.replace(log_file + '.tmp', log_file)
+        print(f"Iteration {iteration} again against '{REFERENCE}' with {REFERENCE_GAMES} games "
+              f'({played} before) in {time.perf_counter() - start:.0f}s (wins-ties-losses): '
+              f'{score(*result):.0%} ({result[0]}-{result[1]}-{result[2]})', flush=True)
+
+
 def score(wins, ties, losses):
     """Share of points: win = 1, tie = 0.5."""
     return (wins + 0.5 * ties) / (wins + ties + losses)
@@ -475,6 +504,8 @@ def main():
             buffer.save(buffer_file)
 
     try:
+        if reference is not None and os.path.exists(log_file):
+            repeat_checks(reference, device, log_file, reference_columns)
         if WARM_START and not warm_started and iteration == 0:
             start = time.perf_counter()
             print(f'Warm start: {WARM_START_GAMES} games of minimax depth {WARM_START_DEPTH} ...')
@@ -532,15 +563,19 @@ def main():
             if reference is not None:
                 row.update(dict.fromkeys(reference_columns, ''))
                 if iteration % REFERENCE_EVERY == 0:
+                    check_start = time.perf_counter()
                     result = against_reference(model, reference, device)
                     row.update(zip(reference_columns, (score(*result),) + result))
-                    line += (f" | against '{REFERENCE}' (wins-ties-losses): {score(*result):.0%} "
-                             f'({result[0]}-{result[1]}-{result[2]})')
+                    line += (f" | against '{REFERENCE}', {REFERENCE_GAMES} games in "
+                             f'{time.perf_counter() - check_start:.0f}s (wins-ties-losses): '
+                             f'{score(*result):.0%} ({result[0]}-{result[1]}-{result[2]})')
             row['seconds'] = round(time.perf_counter() - start)
             write_log(log_file, row)
             print(line, flush=True)
     except KeyboardInterrupt:
-        print(f'\nStopped. Saving ... (the network is from iteration {iteration})')
+        # Colab's stop button can send the stop signal several times; a second one must not break the saving
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        print(f'\nStopped. Saving ... (the network is from iteration {iteration})', flush=True)
         save(with_buffer=True)
         print(f'Saved to {checkpoint_file}. Start the script again to continue.')
 

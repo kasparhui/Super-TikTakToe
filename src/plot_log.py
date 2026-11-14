@@ -76,21 +76,26 @@ def plot_self_play(axis, rows):
     legend(axis, loc='upper center', bbox_to_anchor=(0.5, -0.2), ncol=3)
 
 
-def plot_scores(axis, rows, depths):
-    """Share of points against minimax (win = 1, tie = 0.5), one line per depth."""
-    for depth in depths:
-        x, y = column(rows, f'vs_minimax_{depth}')
-        color = DEPTH_COLORS[depths.index(depth) % len(DEPTH_COLORS)]
-        axis.plot(x, y, color=color, linewidth=2, marker='o', markersize=5,
-                  markeredgecolor=SURFACE, markeredgewidth=1, label=f'depth {depth}',
+def opponent_name(key):
+    """'9' -> 'minimax depth 9', 'medium' -> "the 'medium' network"."""
+    return f'minimax depth {key}' if key.isdigit() else f"the '{key}' network"
+
+
+def plot_scores(axis, rows, opponents):
+    """Share of points (win = 1, tie = 0.5) against every test opponent, one line each.
+    opponents: '9' for minimax of depth 9, 'medium' for a finished network."""
+    for i, key in enumerate(opponents):
+        x, y = column(rows, f'vs_minimax_{key}' if key.isdigit() else f'vs_{key}')
+        axis.plot(x, y, color=DEPTH_COLORS[i % len(DEPTH_COLORS)], linewidth=2, marker='o', markersize=5,
+                  markeredgecolor=SURFACE, markeredgewidth=1, label=opponent_name(key),
                   clip_on=False, zorder=3)
     axis.axhline(0.5, color=AXIS, linewidth=1, linestyle=(0, (4, 3)))
-    style(axis, 'Points against minimax (win = 1, tie = 0.5)', percent=True)
-    legend(axis, loc='upper center', bbox_to_anchor=(0.5, -0.2), ncol=len(depths))
+    style(axis, 'Points in the tests (win = 1, tie = 0.5)', percent=True)
+    legend(axis, loc='upper center', bbox_to_anchor=(0.5, -0.2), ncol=len(opponents))
 
 
 def plot_split(axis, rows, depth):
-    """Wins, ties and losses against minimax of one depth, one bar per test."""
+    """Wins, ties and losses against one test opponent, one bar per test."""
     tests = [row for row in rows if row.get(f'wins_{depth}') is not None]
     x = [row['iteration'] for row in tests]
     width = 0.8 * (min(b - a for a, b in zip(x, x[1:])) if len(x) > 1 else 1)
@@ -100,7 +105,7 @@ def plot_split(axis, rows, depth):
         share = [row[f'{name}_{depth}'] / total for row, total in zip(tests, totals)]
         axis.bar(x, share, width, bottom=bottom, color=color, label=label, edgecolor=SURFACE, linewidth=1)
         bottom = [b + s for b, s in zip(bottom, share)]
-    style(axis, f'Against minimax depth {depth}', percent=True)
+    style(axis, f'Against {opponent_name(str(depth))}', percent=True)
     legend(axis, loc='upper center', bbox_to_anchor=(0.5, -0.2), ncol=3)
 
 
@@ -112,6 +117,8 @@ def plot(model, save_as=None):
     names = rows[0].keys()
     depths = sorted(int(n.rsplit('_', 1)[1]) for n in names
                     if re.fullmatch(r'vs_minimax_\d+', n) and column(rows, n)[0])
+    networks = [n[3:] for n in names if re.fullmatch(r'vs_[a-z]+', n) and column(rows, n)[0]]
+    depths = [str(d) for d in depths] + networks        # all test opponents
     split_depths = [d for d in depths if f'wins_{d}' in names and column(rows, f'wins_{d}')[0]]
 
     columns = max(3, len(split_depths))
