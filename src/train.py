@@ -8,6 +8,11 @@ who won in the end (value). The better network then plays the next games.
 
 Everything is saved after every iteration. Stop with Ctrl+C whenever you want
 and start the script again later - it continues where it stopped.
+
+The settings below are the plan for the 'large' network (about 250 iterations).
+The numbers in LEARNING_RATE_DECAY, SIMULATIONS_GROWTH and BUFFER_GROWTH count
+iterations of that training; for another network they have to be chosen again.
+On Google Colab: see colab_train.ipynb.
 """
 import csv
 import os
@@ -28,14 +33,17 @@ import Tic_Tac_Toe_NN as NN
 from Tic_Tac_Toe_NN import SPATIAL_TO_MOVE
 
 # ------------------------------- Settings -------------------------------
-MODEL = 'medium'            # 'small', 'medium' or 'large' (see Tic_Tac_Toe_NN.py)
+MODEL = 'large'             # 'small', 'medium' or 'large' (see Tic_Tac_Toe_NN.py)
 ITERATIONS = 100000         # how many iterations at most; Ctrl+C stops earlier
 DEVICE = 'auto'             # 'auto', 'mps' (Apple), 'cuda' (Nvidia) or 'cpu'
 
 # Self-play
 GAMES_PER_ITERATION = 512   # games the network plays against itself per iteration
 PARALLEL_GAMES = 256        # how many of them run at the same time
-SIMULATIONS = 400           # positions the search looks at per move
+SIMULATIONS = 200           # positions the search looks at per move at the beginning
+# A young network learns as much from cheap games; later the games get more careful.
+# {after this many iterations: simulations per move from then on}
+SIMULATIONS_GROWTH = {100: 400}
 TEMPERATURE_MOVES = 20      # for this many moves a game picks its moves with some randomness
 NOISE_WEIGHT = 0.25         # random noise on the first move of every search (0 = none)
 NOISE_ALPHA = 0.6
@@ -46,7 +54,7 @@ BATCH_SIZE = 256
 LEARNING_RATE = 1e-3        # how big the learning steps are at the beginning
 # Learning rate decay: smaller steps later, for the fine tuning.
 # {after this many iterations: learning rate from then on}
-LEARNING_RATE_DECAY = {132: 3e-4, 200: 1e-4}
+LEARNING_RATE_DECAY = {120: 3e-4, 200: 1e-4}
 WEIGHT_DECAY = 1e-4
 REPLAY_RATIO = 4            # how often every new position is used for learning on average
 BUFFER_SIZE = 300000        # positions kept from earlier iterations (about 11 iterations)
@@ -63,8 +71,9 @@ WARM_START_DEPTH = 5        # depth of the minimax that plays these games
 WARM_START_RANDOM = 0.2     # share of random moves in these games, for variety
 WARM_START_EPOCHS = 2
 
-# Progress check: every EVAL_EVERY iterations the network plays against minimax
-EVAL_EVERY = 4
+# Progress check: every EVAL_EVERY iterations the network plays against minimax (0 = never;
+# the snapshots can be tested afterwards with test_vs_minimax.py and test_networks.py)
+EVAL_EVERY = 0
 EVAL_DEPTHS = (9, 11, 13)   # depths of the minimax opponents (only to measure, nothing is learned from them)
 EVAL_GAMES = 40             # games against each of them, must be even (more games = less random up and down)
 EVAL_PROCESSES = 8          # the minimax moves of these games are computed in parallel
@@ -173,11 +182,11 @@ def minimax_games(n_games):
 # self-play
 # ----------------------------------------------------------------------------
 
-def self_play(model, device, n_games):
+def self_play(model, device, n_games, n_simulations):
     """The network plays n_games against itself. Returns the training data
     (planes, policy targets, value targets) and a dict with statistics."""
     parallel = min(PARALLEL_GAMES, n_games)
-    search = MCTS.BatchedSearch(model, device, parallel, SIMULATIONS,
+    search = MCTS.BatchedSearch(model, device, parallel, n_simulations,
                                 noise_weight=NOISE_WEIGHT, noise_alpha=NOISE_ALPHA)
     length = MCTS.MAX_GAME_LENGTH
     rec_planes = np.zeros((parallel, length, NN.INPUT_PLANES, 9, 9), dtype=np.uint8)
@@ -345,6 +354,11 @@ def learning_rate(iteration):
     return _scheduled(LEARNING_RATE, LEARNING_RATE_DECAY, iteration)
 
 
+def simulations(iteration):
+    """The simulations per move in the games of the iteration that follows."""
+    return _scheduled(SIMULATIONS, SIMULATIONS_GROWTH, iteration)
+
+
 def buffer_size(iteration):
     """How many positions are kept for the iteration that follows."""
     return _scheduled(BUFFER_SIZE, BUFFER_GROWTH, iteration)
@@ -356,7 +370,7 @@ def paths(variant):
 
 
 def snapshot_path(variant, iteration):
-    return os.path.join(NN.MODEL_DIR, 'snapshots', f'alphazero_{variant}_iteration{iteration:04d}.pt')
+    return NN.snapshot_path(variant, iteration)
 
 
 def write_log(path, row):
@@ -411,7 +425,7 @@ def main():
             buffer.load(buffer_file)
         print(f"Continuing '{MODEL}' network after iteration {iteration} "
               f"({total_games} games so far, {buffer.size} positions in memory) on {device}, "
-              f"{SIMULATIONS} simulations per move, learning rate {learning_rate(iteration):g}")
+              f"{simulations(iteration)} simulations per move, learning rate {learning_rate(iteration):g}")
     else:
         parameters = sum(p.numel() for p in model.parameters())
         print(f"New '{MODEL}' network ({parameters / 1e6:.2f} million parameters) on {device}")
@@ -440,7 +454,8 @@ def main():
 
         while iteration < ITERATIONS:
             start = time.perf_counter()
-            data, stats = self_play(model, device, GAMES_PER_ITERATION)
+            n_simulations = simulations(iteration)
+            data, stats = self_play(model, device, GAMES_PER_ITERATION, n_simulations)
             play_time = time.perf_counter() - start
             if buffer.capacity != buffer_size(iteration):
                 buffer.resize(buffer_size(iteration))
@@ -461,13 +476,13 @@ def main():
             row = {'iteration': iteration, 'games': total_games, 'positions': stats['positions'],
                    'policy_loss': round(policy_loss, 4), 'value_loss': round(value_loss, 4),
                    'x_wins': stats['x_wins'], 'o_wins': stats['o_wins'], 'ties': stats['ties'],
-                   'learning_rate': rate, 'simulations': SIMULATIONS}
+                   'learning_rate': rate, 'simulations': n_simulations}
             line = (f"Iteration {iteration}: {stats['games']} games, {stats['positions']} positions "
                     f"in {play_time:.0f}s | policy loss {policy_loss:.3f}, value loss {value_loss:.3f}"
-                    f" | learning rate {rate:g}")
+                    f" | learning rate {rate:g}, {n_simulations} simulations")
             for depth in EVAL_DEPTHS:
                 row.update(dict.fromkeys(test_columns(depth), ''))
-            if iteration % EVAL_EVERY == 0:
+            if EVAL_EVERY and iteration % EVAL_EVERY == 0:
                 parts = []
                 with Pool(EVAL_PROCESSES, initializer=_test_worker) as pool:
                     for depth in EVAL_DEPTHS:

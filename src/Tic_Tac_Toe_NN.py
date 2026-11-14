@@ -30,7 +30,13 @@ MODEL_VARIANTS = {
 DEFAULT_MODEL = 'medium'
 
 INPUT_PLANES = 6
-MODEL_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'models')
+# Where the networks, logs and snapshots are. Another folder can be given with the
+# environment variable SUPER_TTT_MODELS (used on Google Colab to save to Google Drive).
+MODEL_DIR = (os.environ.get('SUPER_TTT_MODELS')
+             or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'models'))
+# On Nvidia cards the search asks the network in half precision, which is faster there.
+# It has no effect on Apple chips or the processor, and learning always uses full precision.
+HALF_PRECISION = True
 
 # A move is the number  big_field * 9 + little_field  (as in game.Board).
 # MOVE_TO_SPATIAL[move] is where that cell lies in the flattened 9x9 picture.
@@ -140,11 +146,26 @@ def save_checkpoint(path, model, optimizer=None, **extra):
     os.replace(path + '.tmp', path)
 
 
-def load_model(variant=DEFAULT_MODEL, device='cpu'):
-    """The trained network of this variant, ready to play."""
+def snapshot_path(variant, iteration):
+    """The copy of the network that train.py keeps of this training iteration."""
+    return os.path.join(MODEL_DIR, 'snapshots', f'alphazero_{variant}_iteration{int(iteration):04d}.pt')
+
+
+def saved_iteration(variant=DEFAULT_MODEL):
+    """The training iteration of the newest network of this variant."""
+    return torch.load(checkpoint_path(variant), map_location='cpu').get('iteration', '')
+
+
+def load_model(variant=DEFAULT_MODEL, device='cpu', iteration=None):
+    """The trained network of this variant, ready to play.
+    iteration: None for the newest one, or the number of a training iteration
+    of which train.py has kept a snapshot (models/snapshots/)."""
     if variant not in MODEL_VARIANTS:
         raise ValueError(f"Unknown model '{variant}'. Use one of {list(MODEL_VARIANTS)}.")
-    path = checkpoint_path(variant)
+    path = checkpoint_path(variant) if iteration is None else snapshot_path(variant, iteration)
+    if not os.path.exists(path) and iteration is not None:
+        raise FileNotFoundError(f"There is no snapshot of the '{variant}' network after iteration "
+                                f"{iteration} ({path}). See models/snapshots/ for the ones that exist.")
     if not os.path.exists(path):
         raise FileNotFoundError(
             f"There is no trained '{variant}' network yet ({path}). "
@@ -158,7 +179,8 @@ def load_model(variant=DEFAULT_MODEL, device='cpu'):
 
 def predict(model, planes, device):
     """planes: numpy batch x 6 x 9 x 9  ->  numpy (logits: batch x 81, values: batch)"""
-    with torch.inference_mode():
+    half = HALF_PRECISION and torch.device(device).type == 'cuda'
+    with torch.inference_mode(), torch.autocast('cuda', dtype=torch.float16, enabled=half):
         logits, values = model(torch.from_numpy(planes).to(device))
     return logits.float().cpu().numpy(), values.float().cpu().numpy()
 
