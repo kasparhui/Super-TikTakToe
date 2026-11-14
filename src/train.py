@@ -55,13 +55,13 @@ BATCH_SIZE = 256
 LEARNING_RATE = 1e-3        # how big the learning steps are at the beginning
 # Learning rate decay: smaller steps later, for the fine tuning.
 # {after this many iterations: learning rate from then on}
-LEARNING_RATE_DECAY = {80: 3e-4, 160: 1e-4}
+LEARNING_RATE_DECAY = {120: 3e-4, 190: 1e-4}
 WEIGHT_DECAY = 1e-4
 REPLAY_RATIO = 4            # how often every new position is used for learning on average
 BUFFER_SIZE = 300000        # positions kept from earlier iterations (about 11 iterations)
 # Later the network changes slowly, so older games stay good lessons and more are kept.
 # {after this many iterations: positions kept from then on}
-BUFFER_GROWTH = {160: 600000}
+BUFFER_GROWTH = {190: 600000}
 
 # Warm start: before the first iteration the network learns from games of the
 # minimax AI (your evaluation function), so it does not start from zero.
