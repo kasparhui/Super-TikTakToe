@@ -34,7 +34,7 @@ from Tic_Tac_Toe_NN import SPATIAL_TO_MOVE
 
 # ------------------------------- Settings -------------------------------
 MODEL = 'large'             # 'small', 'medium' or 'large' (see Tic_Tac_Toe_NN.py)
-ITERATIONS = 100000         # how many iterations at most; Ctrl+C stops earlier
+ITERATIONS = 240            # the training ends by itself after this many iterations; Ctrl+C stops earlier
 DEVICE = 'auto'             # 'auto', 'mps' (Apple), 'cuda' (Nvidia) or 'cpu'
 
 # Self-play
@@ -596,6 +596,8 @@ def main():
             row['seconds'] = round(time.perf_counter() - start)
             write_log(log_file, row)
             print(line, flush=True)
+        print(f'\nFinished: iteration {iteration} is reached and everything is saved in {checkpoint_file}. '
+              f'For more, raise ITERATIONS in src/train.py.', flush=True)
     except KeyboardInterrupt:
         # Colab's stop button can send the stop signal several times; a second one must not break the saving
         signal.signal(signal.SIGINT, signal.SIG_IGN)
