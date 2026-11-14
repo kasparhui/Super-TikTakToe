@@ -4,6 +4,8 @@
     python3 src/pretest.py speed xlarge    the same for another network size than the one in train.py
     python3 src/pretest.py resume      does saving and continuing work? run it twice (2-3 minutes each)
     python3 src/pretest.py capacity    does a bigger network learn more from the same games? (20-40 minutes)
+    python3 src/pretest.py precision   half against full precision with the trained network on its own
+                                       saved positions (1-2 minutes, only meaningful on an Nvidia card)
 
 All of them use the settings of train.py (which network, simulations, ...).
 None of them touches a real training: 'resume' and 'capacity' write to the
@@ -309,8 +311,40 @@ def capacity(steps=CAPACITY_STEPS):
         print(f'It is saved as {path}')
 
 
+def precision():
+    """Asks the trained network about all its saved positions in half and in full precision."""
+    device = NN.choose_device(train.DEVICE)
+    model = NN.load_model(train.MODEL, device)
+    planes = train.load_positions(train.paths(train.MODEL)[1])[0]
+    print(f"'{train.MODEL}' network after iteration {NN.saved_iteration(train.MODEL)} on {len(planes)} saved "
+          f'positions, {machine(device)}')
+    if device.type != 'cuda':
+        print('Half precision is only used on Nvidia cards; nothing to compare here.')
+        return
+    broken, worst_move, worst_value = 0, 0.0, 0.0
+    for start in range(0, len(planes), 2048):
+        x = torch.from_numpy(planes[start:start + 2048]).to(device).float()
+        legal = x[:, 2].reshape(-1, 81) > 0
+        with torch.inference_mode():
+            logits, values = model(x)
+            with torch.autocast('cuda', dtype=torch.float16):
+                half_logits, half_values = model(x)
+        half_logits, half_values = half_logits.float(), half_values.float()
+        fine = torch.isfinite(half_logits).all(dim=1) & torch.isfinite(half_values)
+        broken += int((~fine).sum())
+        if fine.any():
+            def moves(z):
+                return torch.softmax(z.masked_fill(~legal, -1e9), dim=1)
+            worst_move = max(worst_move, float((moves(logits) - moves(half_logits))[fine].abs().max()))
+            worst_value = max(worst_value, float((values - half_values)[fine].abs().max()))
+    print(f'Positions where half precision gives no number at all: {broken}')
+    print(f'On the others: largest difference of a move probability {worst_move:.4f}, of a value {worst_value:.4f}')
+    print('-> ' + ('This is what damaged the training. The search now asks again in full precision in such '
+                   'a case.' if broken else 'No such position here.'))
+
+
 if __name__ == '__main__':
-    tests = {'speed': speed, 'resume': resume, 'capacity': capacity}
+    tests = {'speed': speed, 'resume': resume, 'capacity': capacity, 'precision': precision}
     if len(sys.argv) < 2 or sys.argv[1] not in tests:
         raise SystemExit(__doc__)
     if sys.argv[1] == 'capacity' and len(sys.argv) > 2:

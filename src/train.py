@@ -138,13 +138,25 @@ class ReplayBuffer:
         os.replace(path + '.tmp', path)
 
     def load(self, path):
-        data = np.load(path)
-        n = min(len(data['value']), self.capacity)
-        self.planes[:n] = data['planes'][-n:]
-        self.policy[:n] = data['policy'][-n:]
-        self.value[:n] = data['value'][-n:]
+        planes, policy, value, dropped = load_positions(path)
+        if dropped:
+            print(f'{dropped} saved positions were damaged (not a number) and are left out.')
+        n = min(len(value), self.capacity)
+        self.planes[:n] = planes[-n:]
+        self.policy[:n] = policy[-n:]
+        self.value[:n] = value[-n:]
         self.size = n
-        self.position = int(data['position']) % self.capacity if n == self.capacity else n
+        self.position = n % self.capacity
+
+
+def load_positions(path):
+    """The saved positions, oldest first, without damaged ones. Returns (planes, policy, value, number left out)."""
+    data = np.load(path)
+    planes, policy, value = data['planes'], data['policy'], data['value']
+    start = int(data['position']) % max(1, len(value))      # in a full memory the oldest position is here
+    order = (start + np.arange(len(value))) % max(1, len(value))
+    good = order[np.isfinite(value[order]) & np.isfinite(policy[order]).all(axis=1)]
+    return planes[good], policy[good], value[good], len(value) - len(good)
 
 
 # ----------------------------------------------------------------------------
@@ -262,6 +274,10 @@ def train(model, optimizer, buffer, device, steps):
         logits = logits.masked_fill(planes[:, 2].reshape(-1, 81) == 0, -1e9)
         policy_loss = -(policy * F.log_softmax(logits, dim=1)).sum(dim=1).mean()
         value_loss = F.mse_loss(predicted_value, value)
+        if not bool(torch.isfinite(policy_loss + value_loss)):
+            raise SystemExit('The loss is not a number any more, so the training stops here and this '
+                             'iteration is not saved. Start again to continue from the last saved iteration; '
+                             'if it happens again, go back to a snapshot: python3 src/train.py restore <iteration>')
         optimizer.zero_grad()
         (policy_loss + value_loss).backward()
         optimizer.step()
@@ -526,6 +542,14 @@ def main():
             n_simulations = simulations(iteration)
             data, stats = self_play(model, device, GAMES_PER_ITERATION, n_simulations)
             play_time = time.perf_counter() - start
+            good = np.isfinite(data[2]) & np.isfinite(data[1]).all(axis=1)
+            if not good.all():      # must never get into the lessons: one such position ruins the network
+                print(f'{int((~good).sum())} positions of this iteration are damaged (not a number) and are left out.')
+                data = tuple(part[good] for part in data)
+                stats['positions'] = int(good.sum())
+                if not stats['positions']:
+                    raise SystemExit('All positions of this iteration are damaged: the network itself is. '
+                                     'Go back to a snapshot: python3 src/train.py restore <iteration>')
             if buffer.capacity != buffer_size(iteration):
                 buffer.resize(buffer_size(iteration))
                 print(f'From now on the last {buffer.capacity} positions are kept.')
@@ -580,5 +604,46 @@ def main():
         print(f'Saved to {checkpoint_file}. Start the script again to continue.')
 
 
+def restore(iteration):
+    """Goes back to the snapshot of this iteration: it becomes the newest network, later rows are
+    taken out of the log, and damaged positions are taken out of the memory."""
+    checkpoint_file, buffer_file, log_file = paths(MODEL)
+    snapshot = snapshot_path(MODEL, iteration)
+    if not os.path.exists(snapshot):
+        raise SystemExit(f'There is no snapshot of iteration {iteration} ({snapshot}).')
+    weights = torch.load(snapshot, map_location='cpu')['model']
+    if not all(bool(torch.isfinite(value).all()) for value in weights.values()):
+        raise SystemExit(f'The snapshot of iteration {iteration} is damaged too. Try an earlier one.')
+    shutil.copyfile(snapshot, checkpoint_file + '.tmp')
+    os.replace(checkpoint_file + '.tmp', checkpoint_file)
+    print(f"The '{MODEL}' network is back at iteration {iteration}.")
+    if os.path.exists(buffer_file):
+        planes, policy, value, dropped = load_positions(buffer_file)
+        with open(buffer_file + '.tmp', 'wb') as file:
+            np.savez(file, planes=planes, policy=policy, value=value, position=len(value))
+        os.replace(buffer_file + '.tmp', buffer_file)
+        print(f'Memory: {dropped} damaged positions taken out, {len(value)} are kept.')
+    if os.path.exists(log_file):
+        with open(log_file, newline='') as file:
+            reader = csv.DictReader(file)
+            fields, rows = reader.fieldnames, list(reader)
+        kept = [row for row in rows if int(row['iteration']) <= iteration]
+        with open(log_file + '.tmp', 'w', newline='') as file:
+            writer = csv.DictWriter(file, fieldnames=fields)
+            writer.writeheader()
+            writer.writerows(kept)
+        os.replace(log_file + '.tmp', log_file)
+        print(f'Log: {len(rows) - len(kept)} later rows taken out.')
+    for later in range(iteration + 1, iteration + 1000):
+        if os.path.exists(snapshot_path(MODEL, later)):
+            os.remove(snapshot_path(MODEL, later))
+            print(f'Snapshot of iteration {later} removed.')
+    print('Start the training again to continue from there.')
+
+
 if __name__ == '__main__':
-    main()
+    import sys
+    if len(sys.argv) == 3 and sys.argv[1] == 'restore':
+        restore(int(sys.argv[2]))
+    else:
+        main()

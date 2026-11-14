@@ -181,9 +181,16 @@ def load_model(variant=DEFAULT_MODEL, device='cpu', iteration=None):
 def predict(model, planes, device):
     """planes: numpy batch x 6 x 9 x 9  ->  numpy (logits: batch x 81, values: batch)"""
     half = HALF_PRECISION and torch.device(device).type == 'cuda'
+    x = torch.from_numpy(planes).to(device)
     with torch.inference_mode(), torch.autocast('cuda', dtype=torch.float16, enabled=half):
-        logits, values = model(torch.from_numpy(planes).to(device))
-    return logits.float().cpu().numpy(), values.float().cpu().numpy()
+        logits, values = model(x)
+    logits, values = logits.float().cpu().numpy(), values.float().cpu().numpy()
+    if half and not (np.isfinite(logits).all() and np.isfinite(values).all()):
+        # a number got too big for half precision: ask again in full precision
+        with torch.inference_mode():
+            logits, values = model(x)
+        logits, values = logits.float().cpu().numpy(), values.float().cpu().numpy()
+    return logits, values
 
 
 def random_symmetry(planes, policy):
