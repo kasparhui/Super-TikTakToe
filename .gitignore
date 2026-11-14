@@ -163,3 +163,4 @@ cython_debug/
 models/*_buffer.npz
 models/*.tmp
 models/snapshots/
+models/pretest/

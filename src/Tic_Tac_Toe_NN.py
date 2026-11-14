@@ -26,6 +26,7 @@ MODEL_VARIANTS = {
     'small':  {'channels': 32, 'blocks': 4},    # a first result in 1-2 hours
     'medium': {'channels': 64, 'blocks': 6},    # made for one night of training
     'large':  {'channels': 96, 'blocks': 8},    # for several nights
+    'xlarge': {'channels': 128, 'blocks': 10},  # about 2.2 times the work of 'large' per position
 }
 DEFAULT_MODEL = 'medium'
 
