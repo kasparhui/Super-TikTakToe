@@ -28,6 +28,8 @@ MODEL_VARIANTS = {
     'medium': {'channels': 64, 'blocks': 6},    # made for one night of training
     'large':  {'channels': 96, 'blocks': 8},    # for several nights
     'xlarge': {'channels': 128, 'blocks': 10},  # about 2.2 times the work of 'large' per position
+    # 'large' with line layers (design D5 of test_designs.py): every cell also hears from the lines it lies on
+    'large_lines': {'channels': 96, 'blocks': 8, 'lines': True},
 }
 DEFAULT_MODEL = 'medium'
 
@@ -128,7 +130,11 @@ class UltimateTicTacToeNet(nn.Module):
 def create_model(variant=DEFAULT_MODEL):
     if variant not in MODEL_VARIANTS:
         raise ValueError(f"Unknown model '{variant}'. Use one of {list(MODEL_VARIANTS)}.")
-    return UltimateTicTacToeNet(**MODEL_VARIANTS[variant])
+    shape = dict(MODEL_VARIANTS[variant])
+    if shape.pop('lines', False):
+        import test_designs                     # the design under test lives there until it has proven itself
+        return test_designs.DesignNet(**shape, lines=True)
+    return UltimateTicTacToeNet(**shape)
 
 
 def choose_device(device='auto'):

@@ -17,6 +17,8 @@ On Google Colab: see colab_train.ipynb.
     python3 src/train.py restore 120             goes back to the snapshot of an iteration
     python3 src/train.py experiment more_games   continues the finished network with one thing
                                                  changed, in its own folder (see EXPERIMENTS below)
+    python3 src/train.py run large_lines 60      trains another network than MODEL with the same
+                                                 settings, up to this iteration
 """
 import csv
 import os
@@ -743,5 +745,8 @@ if __name__ == '__main__':
         restore(int(sys.argv[2]))
     elif len(sys.argv) == 3 and sys.argv[1] == 'experiment':
         experiment(sys.argv[2])
+    elif len(sys.argv) == 4 and sys.argv[1] == 'run':
+        MODEL, ITERATIONS = sys.argv[2], int(sys.argv[3])
+        main()
     else:
         main()

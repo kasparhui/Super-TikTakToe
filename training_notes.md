@@ -1,6 +1,6 @@
 # Training notes: the large network on Google Colab
 
-Last updated: 15 November 2026, after the large network finished at round 240 (log and snapshot test on the laptop).
+Last updated: 15 November 2026, after both Colab training tests (more_games, more_simulations) finished and the first design matches on the laptop.
 This file is the memory of the project's training decisions. It is kept up to date
 whenever something that influences the training changes.
 
@@ -160,8 +160,13 @@ The main line of the search grows by about 2 to 3 moves per doubling of the simu
 - **Built into the search (15 November 2026, `FAST_PLAY` and `COMPILE` in `src/Tic_Tac_Toe_NN.py`):** on Nvidia
   cards the search asks a rearranged, translated copy of the network. The copy is brought up to date whenever
   the weights change, is compared with the network itself at the first question after every change, and switches
-  itself off with a message if it disagrees. Checked on the laptop for equal answers; **not yet run on Colab**.
-  Expected from the numbers above: rounds about 1.4 times as fast, about 1.7 times with the translation (guess).
+  itself off with a message if it disagrees. Checked on the laptop for equal answers.
+  **Measured on the L4 (15 November 2026, `pretest.py bottleneck`, 512 games, 400 simulations):** 7.1 ms per move
+  of a game as before, 5.5 ms with the rearranged copy, 4.3 ms with the translation = 1.65 times as fast, no
+  warning printed. The search tree is now 17% of the time (before 11%). 1024 games at once are now as fast as
+  512 (4.4 ms), 2048 slower (5.4 ms). In the real training (test `more_simulations`, 512 games, 800 simulations):
+  319 seconds per round instead of 544 = 1.7 times as fast (round 251, the first with the faster path).
+  Test `more_games` (1024 games, 400 simulations): 291 seconds instead of 536 = 1.84 times as fast (round 249).
   `pretest.py bottleneck` part 3 measures it. Only today's design is covered; a new design needs its own copy rule.
 
 ## Known problems
@@ -244,6 +249,18 @@ bigger network; the training tests below come first. Still open from step 2: lar
    - Judge: 3 points or more above the baseline is a real gain, 1 point or less is none (each average is
      uncertain by about 1 point). At the low learning rate "no gain" is weaker evidence than a clear gain.
    - Needs: large ended at round 240 and nothing trained after it (the test refuses to start otherwise).
+   - **Results (15 November 2026, both finished).** Baseline, large's 4 checks up to round 240 played again:
+     52.7% (+-0.7%, 2048 games).
+     - `more_games` (to round 260): all 5 checks 55.1% (+-0.7%, 2560 games), last 3 checks 54.6% (+-0.9%).
+       That is +2.4 points over all checks and +1.9 over the last 3: between the two limits. A small gain,
+       likely real (about 2.5 times the uncertainty over all checks), but not the 3 points asked for.
+     - `more_simulations` (to round 272): all 8 checks 52.8% (+-0.5%, 4096 games), last 3 checks 51.4% (+-0.9%).
+       No gain (+0.1 and -1.3 points).
+     - Reading: at this stage more games per round help a little, more simulations per move do not. Neither
+       lifts large clearly above medium, so training settings alone are not the way forward. For the next
+       run: 1024 games per round is the better use of time than 800 simulations (with the faster network copy
+       a 1024-game round at 400 simulations takes about 290 seconds on the L4). Both tests ran at the low
+       learning rate 0.0001, so "no gain" is weaker evidence than a gain.
 2. **Design tests on the laptop** (free; list refined 15 November 2026, not started): same positions (large's
    memory of 600,000, last 10% held back), same steps; measure the error on the held-back positions for move
    and value separately, the positions per second, and a 256-game match against the baseline design.
@@ -284,10 +301,99 @@ bigger network; the training tests below come first. Still open from step 2: lar
      | D7 body on the 3x3 big board | 0.3173 | 0.1459 |
 
      Reading: the two baseline runs differ by 0.009, so D1 and D5 are clear gains, D4 and D6 small ones at
-     the edge of the noise, D2 and D3 none. D7 is clearly less exact but 2.6 times as fast. Running next:
-     C1 (D1 and D5 together), C2 (D1, D4, D5, D6 together), then the matches against D0.
+     the edge of the noise, D2 and D3 none. D7 is clearly less exact but 2.6 times as fast.
+   - **Matches against D0 (first run), 236 games each, 200 simulations, each uncertain by about 2.5 points; the
+     second D0 run scored 46.0%, so differences under about 5 points mean nothing:**
+
+     | Design | Distance | Value error | Points against D0 | Wins-ties-losses |
+     |---|---|---|---|---|
+     | D5 line layers | 0.2323 | 0.1284 | 70.6% | 127-79-30 |
+     | C1 = D1 + D5 | 0.2406 | 0.1221 | 69.1% | 119-88-29 |
+     | C2 = D1 + D4 + D5 + D6 | 0.2288 | 0.1202 | 66.7% | 105-105-26 |
+     | D6 exact facts | 0.2680 | 0.1335 | 61.2% | 101-87-48 |
+     | D1 in-board filters | 0.2460 | 0.1297 | 59.7% | 88-106-42 |
+     | D4 reverse sending | 0.2668 | 0.1331 | 55.5% | 79-104-53 |
+     | D3 board track | 0.2826 | 0.1340 | 53.8% | 85-84-67 |
+     | D2 learned summary | 0.2732 | 0.1319 | 48.1% | 70-87-79 |
+     | D0 second run | 0.2757 | 0.1330 | 46.0% | 54-109-73 |
+     | D7 big-board body | 0.3173 | 0.1459 | 41.3% | 54-87-95 |
+
+     Reading: the line layers are the big gain (about 150 Elo over today's design at this small scale).
+     Exact facts and in-board filters help by themselves (about 60%), but adding them to the line layers gives
+     no further gain in the match, although the combinations have the best losses. D7 loses at equal
+     simulations; at equal time (it is 2.6 times as fast) it is not tested. Limits: one run per design, short
+     learning from given positions, medium size.
+   - **Second round (15 November 2026): second runs of the best five, and direct matches against D5 (first
+     run). 236 games each, 200 simulations, about 2.5 points uncertain:**
+
+     | Design | Against D0, first run | Against D0, second run | Against D5, first run | Against D5, second run |
+     |---|---|---|---|---|
+     | D5 line layers | 70.6% | 71.0% | | |
+     | C1 = D1 + D5 | 69.1% | 65.9% | 44.5% | 43.0% |
+     | C2 = D1 + D4 + D5 + D6 | 66.7% | 66.1% | 50.8% | 45.1% |
+     | D1 in-board filters | 59.7% | 56.6% | | |
+     | D6 exact facts | 61.2% | 56.4% | | |
+     | D0 second run | 46.0% | | 28.6% | |
+     | D7 big-board body | 41.3% | | 22.0% | |
+
+     Losses of the second runs (distance / value error): D5 0.2347 / 0.1214, C1 0.2347 / 0.1223,
+     C2 0.2296 / 0.1188, D1 0.2452 / 0.1273, D6 0.2660 / 0.1280.
+     Reading: D5 alone is the winner. Its gain repeats (70.6% and 71.0%), and both combinations score at or
+     below 50% against it in all four direct matches (C1 clearly below), although C2 has the lowest losses.
+     So the in-board filters do not help on top of the line layers and seem to hurt a little; lower loss did
+     not mean stronger play here. Decision: continue with D5 alone. Next: D5 at large size on the laptop,
+     then the 60-round confirmation on Colab (step 3). Still untested: D7 at equal thinking time.
+   - **Where the errors are (15 November 2026, the 60,000 held-back positions; D0 and D5 = average of their
+     two runs; "large" is the finished large network, which has learned from these positions, so its numbers
+     are flattering). Distance / value error / same best move as the search:**
+
+     | Kind of position | Share | D0 | D5 | Large itself |
+     |---|---|---|---|---|
+     | all | 100% | 0.280 / 0.135 / 64% | 0.234 / 0.125 / 68% | 0.153 / 0.100 / 75% |
+     | no board decided | 44% | 0.145 / 0.090 / 74% | 0.124 / 0.089 / 77% | 0.074 / 0.087 / 84% |
+     | 1-2 boards decided | 24% | 0.362 / 0.127 / 60% | 0.318 / 0.126 / 62% | 0.219 / 0.107 / 71% |
+     | 3-4 boards decided | 15% | 0.495 / 0.221 / 56% | 0.433 / 0.213 / 60% | 0.315 / 0.154 / 67% |
+     | 5+ boards decided | 17% | 0.324 / 0.185 / 54% | 0.220 / 0.140 / 58% | 0.123 / 0.078 / 67% |
+     | sent to one board | 89% | 0.255 / 0.133 / 66% | 0.220 / 0.127 / 69% | 0.146 / 0.103 / 76% |
+     | free choice of board | 11% | 0.496 / 0.147 / 53% | 0.353 / 0.112 / 58% | 0.217 / 0.075 / 67% |
+     | can win a small board now | 28% | 0.409 / 0.178 / 57% | 0.336 / 0.156 / 61% | 0.218 / 0.112 / 69% |
+
+     Reading: the line layers gain most where the whole board matters (free choice: distance -29%, value
+     error -24%; 5+ boards decided: -32% and -24%) and almost nothing for the value in the opening and in the
+     middle game with a forced board. The hardest positions for every network, large included, are the middle
+     game with 3-4 boards decided (large's value error 0.154 there, against 0.087 in the opening) and positions
+     with a free choice late in the game (large finds the search's best move in only 61% of them). The opening
+     value error is the same for all (0.087 to 0.090), so that is noise in the lessons, not a design limit.
+     What neither D0 nor D5 has: a summary of the whole board given to every cell (needed to compare boards
+     at a free choice), and lessons about the long game beyond one number (final owner of each small board,
+     win/tie/loss). Candidates for the next design round: D8 = D5 + whole-board summary (mean and maximum
+     over the 9 boards, sent to every cell and to the value output); the extra lessons need new games
+     (second round above).
+   - **Night run on the laptop (built 15 November 2026, started by the user, results open).** One command:
+     `caffeinate -i /usr/bin/python3 -u src/test_designs.py night` (settings: `NIGHT` in `src/test_designs.py`;
+     started again it goes on where it stopped). About 6 to 7 hours (estimate from measured steps per second).
+     1. Medium, 6,000 steps, two runs each, matches against D5: D8 (D5 + whole-board summary), D5n and D5w
+        (16 and 64 numbers per line instead of 32), C3 (D5 + the learned small-board summary of D2).
+     2. Large size, 6,000 steps: D0 and D5, two runs each, matches against D0. Does the gain hold at large size?
+     3. Medium, 36,000 steps (6 times as long): D0 and D5, measured every 1,000 steps, match D5 against D0.
+        Does the gap close with longer learning?
+     4. Large size, 6,000 steps: D8, two runs, matches against D5.
+     Networks of another size or length are kept apart: file names end in `_steps<n>`, match names read
+     `D5@large/6000`; `models/design_tests.csv` has a new column `of_steps`. The same options work by hand:
+     `size=large` and `steps=36000` behind any command.
 3. **Confirm on Colab:** the winning design from scratch for 60 rounds with large's settings, compared with
-   large's log at the same rounds (14% at 20, 28% at 40, 35% at 60). About 2 to 4 units. Stop if not clearly ahead.
+   large's log at the same rounds (14% at 20, 28% at 40, 35% at 60). Stop if not clearly ahead.
+   - **Built 15 November 2026, not yet run:** network variant `large_lines` (96 channels, 8 blocks, line layers =
+     design D5; `NN.create_model` takes the class from `src/test_designs.py` for now), command
+     `python -u src/train.py run large_lines 100`, notebook `colab_design_lines.ipynb`. It saves as
+     `alphazero_large_lines.pt` next to large in Drive and uses all settings of large. Tried on the laptop with
+     three tiny rounds (plays, learns, checks against medium, saves, continues). Not yet run on an Nvidia
+     card, and the faster network copy does not cover this design, so it plays at the old speed.
+     The user allowed 6 to 7 hours, so it runs 100 rounds instead of 60 (it ends before the simulations
+     rise at round 100). Large's checks: 14% at 20, 28% at 40, 35% at 60, 43% at 80, 48% at 100.
+     Estimate: 5 to 6 hours, 10 to 12 units (large's first 100 rounds took 3.9 hours; the line layers are
+     slower per position by a guessed 20 to 50%). 512 games per round as large had, so the comparison is
+     clean; 1024 games per round is left for a later run. 
 4. **The real run** with what passed, on the remaining units (about 40).
 
 ### 5. Other levers, if size stops helping

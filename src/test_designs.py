@@ -9,7 +9,13 @@ of its value, how many positions per second it answers, and a match against toda
     python3 src/test_designs.py train            trains what is missing of PLAN
     python3 src/test_designs.py train D1 D2      trains only these (a second number is the seed: D0:1)
     python3 src/test_designs.py match            plays what is missing: every design against D0
+    python3 src/test_designs.py match C2 vs=D5   plays these designs against another one than D0
     python3 src/test_designs.py summary          the table of everything measured so far
+    python3 src/test_designs.py night            everything in NIGHT, one part after the other (about 7 hours
+                                                 on the laptop); started again, it goes on where it stopped
+
+Behind any command: size=large (another size than SIZE) and steps=40000 (another length than STEPS).
+Such networks and their games are kept apart from the others (file names and match names say so).
 
 All designs take the same input and give the same answers as the networks in Tic_Tac_Toe_NN.py, so
 they work in the search unchanged. Nothing here changes the training of the real networks.
@@ -32,11 +38,21 @@ SIZE = 'medium'                 # channels and blocks of every design (see NN.MO
 STEPS = 6000                    # learning steps per design, 256 positions each (about 3 times every position)
 HELD_OUT = 0.1                  # the newest positions are not learned from, only tested on
 CHECK_EVERY = 1000              # steps between two measurements on the held-back positions
+USUAL = (SIZE, STEPS)           # networks of another size or length get it in their names
 PLAN = ['D0', 'D0:1', 'D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'C1', 'C2']
 MATCH_AGAINST = 'D0'            # every other design plays against this one
 MATCH_OPENINGS = 128            # 2 games per opening
 MATCH_SIMULATIONS = 200
 PARALLEL_GAMES = 128
+
+# the night run: (size, steps, networks to train, [(networks, the one they play against)]), most important first
+NIGHT = [
+    ('medium', 6000, ['D8', 'D8:1', 'D5n', 'D5n:1', 'D5w', 'D5w:1', 'C3', 'C3:1'],
+     [(['D8', 'D8:1', 'D5n', 'D5n:1', 'D5w', 'D5w:1', 'C3', 'C3:1'], 'D5')]),                 # additions to the line layers
+    ('large', 6000, ['D0', 'D0:1', 'D5', 'D5:1'], [(['D0:1', 'D5', 'D5:1'], 'D0')]),    # does the gain hold at large size?
+    ('medium', 36000, ['D0', 'D5'], [(['D5'], 'D0')]),                          # does the gain hold with long learning?
+    ('large', 6000, ['D8', 'D8:1'], [(['D8', 'D8:1'], 'D5')]),
+]
 
 DESIGNS = {
     'D0': "today's design",
@@ -49,8 +65,14 @@ DESIGNS = {
     'D7': 'whole body on the 3x3 big board',
     'C1': 'D1 and D5 together',
     'C2': 'D1, D4, D5 and D6 together',
+    'D8': 'D5 and a summary of the whole board',
+    'C3': 'D5 and the learned small-board summary (D2)',
+    'D5n': 'D5, line descriptions half as wide',
+    'D5w': 'D5, line descriptions twice as wide',
 }
-COMBINED = {'C1': ('inside', 'lines'), 'C2': ('inside', 'reverse', 'lines', 'exact')}
+COMBINED = {'C1': ('inside', 'lines'), 'C2': ('inside', 'reverse', 'lines', 'exact'), 'D8': ('lines', 'whole'),
+            'C3': ('learned', 'lines')}
+LINE_WIDTH = {'D5n': 0.25, 'D5w': 1.0}      # numbers per line as a share of the channels (D5: 0.5)
 
 # ----------------------------------------------------------------------------
 # fixed tables of the game's structure (cells are numbered as in the 9x9 picture)
@@ -144,9 +166,11 @@ def facts(x, s):
 # D0 to D6: today's block with single parts changed
 # ----------------------------------------------------------------------------
 class Block(nn.Module):
-    def __init__(self, channels, context, s, inside, learned, track, reverse, lines):
+    def __init__(self, channels, context, s, inside, learned, track, reverse, lines, whole=False, line_width=None):
         super().__init__()
         self.s, self.learned, self.track, self.reverse, self.lines = s, learned, track, reverse, lines
+        self.whole = whole
+        line_width = line_width or context                  # numbers that describe one line
         self.conv1 = Filter(channels, channels, inside)
         self.bn1 = nn.BatchNorm2d(channels)
         self.conv2 = Filter(channels, channels, inside)
@@ -166,11 +190,14 @@ class Block(nn.Module):
         self.own = nn.Conv2d(width, channels, 1, bias=False)
         self.target = nn.Conv2d(width, channels, 1, bias=False)
         if lines:
-            self.line_in = nn.Conv2d(channels, context, 1)
-            self.line_mix = nn.Conv1d(context, context, 1)
-            self.line_out = nn.Conv1d(context, channels, 1, bias=False)
-            self.big_line_mix = nn.Conv1d(width, context, 1)
-            self.big_line_out = nn.Conv1d(context, channels, 1, bias=False)
+            self.line_in = nn.Conv2d(channels, line_width, 1)
+            self.line_mix = nn.Conv1d(line_width, line_width, 1)
+            self.line_out = nn.Conv1d(line_width, channels, 1, bias=False)
+            self.big_line_mix = nn.Conv1d(width, line_width, 1)
+            self.big_line_out = nn.Conv1d(line_width, channels, 1, bias=False)
+        if whole:               # average and maximum over the 9 small boards, the same for every cell
+            self.whole_mix = nn.Linear(2 * width, context)
+            self.whole_out = nn.Linear(context, channels, bias=False)
 
     def forward(self, x, boards):
         s, batch = self.s, x.shape[0]
@@ -190,19 +217,26 @@ class Block(nn.Module):
             summary = summary + self.line_out(F.relu(self.line_mix(small)) @ s.cell_lines.t())
             large = F.relu(self.big_line_mix(big.flatten(2) @ s.board_lines))       # batch x context x 8 lines
             summary = summary + self.big_line_out(large @ s.board_lines.t()) @ s.own_cells
+        if self.whole:
+            all_boards = big.flatten(2)
+            both = torch.cat([all_boards.mean(dim=2), all_boards.amax(dim=2)], dim=1)
+            summary = summary + self.whole_out(F.relu(self.whole_mix(both))).unsqueeze(2)
         h = self.bn2(self.conv2(h + summary.view(x.shape)))
         return F.relu(x + h), boards
 
 
 class DesignNet(nn.Module):
     def __init__(self, channels, blocks, inside=False, learned=False, track=False, reverse=False,
-                 lines=False, exact=False):
+                 lines=False, exact=False, whole=False, line_width=None):
         super().__init__()
         self.s, self.track, self.exact, self.channels = Structure(), track, exact, channels
+        self.whole = whole
+        line_width = int(channels * line_width) if line_width else None
         self.stem = Filter(14 if exact else NN.INPUT_PLANES, channels, inside)
         self.position = nn.Parameter(torch.zeros(1, channels, 9, 9))
         self.stem_bn = nn.BatchNorm2d(channels)
-        self.blocks = nn.ModuleList([Block(channels, channels // 2, self.s, inside, learned, track, reverse, lines)
+        self.blocks = nn.ModuleList([Block(channels, channels // 2, self.s, inside, learned, track, reverse, lines,
+                                           whole, line_width)
                                      for _ in range(blocks)])
         self.policy_conv = nn.Conv2d(channels, 32, 1, bias=False)
         self.policy_bn = nn.BatchNorm2d(32)
@@ -212,7 +246,7 @@ class DesignNet(nn.Module):
         else:
             self.value_conv = nn.Conv2d(channels, 8, 1, bias=False)
             self.value_bn = nn.BatchNorm2d(8)
-            self.value_fc1 = nn.Linear(8 * 81, 128)
+            self.value_fc1 = nn.Linear(8 * 81 + (2 * channels if whole else 0), 128)
         self.value_fc2 = nn.Linear(128, 1)
 
     def forward(self, x):
@@ -227,6 +261,9 @@ class DesignNet(nn.Module):
             value = boards.flatten(1)
         else:
             value = F.relu(self.value_bn(self.value_conv(x))).flatten(1)
+            if self.whole:      # the value also reads the average and the maximum over all cells
+                cells = x.flatten(2)
+                value = torch.cat([value, cells.mean(dim=2), cells.amax(dim=2)], dim=1)
         value = torch.tanh(self.value_fc2(F.relu(self.value_fc1(value)))).squeeze(1)
         return policy, value
 
@@ -270,6 +307,8 @@ def create(design, size=None):
     changed = {'D1': 'inside', 'D2': 'learned', 'D3': 'track', 'D4': 'reverse', 'D5': 'lines', 'D6': 'exact'}
     if design in COMBINED:
         return DesignNet(**shape, **{part: True for part in COMBINED[design]})
+    if design in LINE_WIDTH:
+        return DesignNet(**shape, lines=True, line_width=LINE_WIDTH[design])
     if design not in changed:
         raise SystemExit(f"There is no design '{design}'. The designs are: {', '.join(DESIGNS)}.")
     return DesignNet(**shape, **{changed[design]: True})
@@ -279,7 +318,7 @@ def create(design, size=None):
 # files
 # ----------------------------------------------------------------------------
 RESULT_FIELDS = ['design', 'size', 'seed', 'step', 'distance', 'value_error', 'policy_loss', 'value_loss',
-                 'weights', 'seconds']
+                 'weights', 'seconds', 'of_steps']
 MATCH_FIELDS = ['a', 'b', 'simulations', 'a_plays', 'result', 'moves', 'opening']
 POINTS = {'win': 1.0, 'tie': 0.5, 'loss': 0.0}
 
@@ -293,7 +332,13 @@ def match_file():
 
 
 def network_file(design, seed):
-    return os.path.join(NN.MODEL_DIR, 'pretest', f'design_{design}_{SIZE}_seed{seed}.pt')
+    length = '' if STEPS == USUAL[1] else f'_steps{STEPS}'
+    return os.path.join(NN.MODEL_DIR, 'pretest', f'design_{design}_{SIZE}_seed{seed}{length}.pt')
+
+
+def match_name(name):
+    """The name of a network in the file of the games: with size and steps if they are not the usual ones."""
+    return name if (SIZE, STEPS) == USUAL else f'{name}@{SIZE}/{STEPS}'
 
 
 def rows_of(path):
@@ -360,7 +405,7 @@ def train(names):
     import train as trainer
     device = NN.choose_device()
     done = {(row['design'], int(row['seed'])) for row in rows_of(result_file())
-            if row['size'] == SIZE and int(row['step']) == STEPS}
+            if row['size'] == SIZE and int(row['step']) == STEPS == int(row['of_steps'])}
     todo = [name for name in names if split_name(name) not in done]
     if not todo:
         print('Everything asked for is trained already.')
@@ -390,7 +435,7 @@ def train(names):
             used = time.perf_counter() - start
             distance, error = pretest._test_losses(model, device, *test)
             rows.append([design, SIZE, seed, step, f'{distance:.4f}', f'{error:.4f}', f'{policy_loss:.4f}',
-                         f'{value_loss:.4f}', weights, f'{used:.0f}'])
+                         f'{value_loss:.4f}', weights, f'{used:.0f}', STEPS])
             print(f'{name} ({DESIGNS[design]}), step {step}: held-back positions: distance {distance:.4f}, '
                   f'value error {error:.4f} | learned: policy {policy_loss:.3f}, value {value_loss:.3f} | '
                   f'{used / 60:.0f} min', flush=True)
@@ -410,7 +455,8 @@ def match(names):
         if name == MATCH_AGAINST or not os.path.exists(network_file(design, seed)):
             continue
         done = {(row['opening'], row['a_plays']) for row in rows_of(match_file())
-                if row['a'] == name and row['b'] == MATCH_AGAINST and int(row['simulations']) == MATCH_SIMULATIONS}
+                if row['a'] == match_name(name) and row['b'] == match_name(MATCH_AGAINST)
+                and int(row['simulations']) == MATCH_SIMULATIONS}
         todo = [(key, side) for key in text for side in ('X', 'O') if (key, side) not in done]
         if not todo:
             continue
@@ -422,14 +468,15 @@ def match(names):
             batch = todo[first:first + PARALLEL_GAMES]
             games = [(text[key], 1 if side == 'X' else -1) for key, side in batch]
             results = test_networks.play_batch(search_a, search_b, games)
-            add_rows(match_file(), MATCH_FIELDS, [[name, MATCH_AGAINST, MATCH_SIMULATIONS, side, result, moves, key]
+            add_rows(match_file(), MATCH_FIELDS, [[match_name(name), match_name(MATCH_AGAINST), MATCH_SIMULATIONS, side, result, moves, key]
                                                   for (key, side), (result, moves) in zip(batch, results)])
             print(f'  {first + len(batch)} of {len(todo)} games after {(time.perf_counter() - start) / 60:.0f} min',
                   flush=True)
 
 
 def summary():
-    results = [row for row in rows_of(result_file()) if row['size'] == SIZE and int(row['step']) == STEPS]
+    results = [row for row in rows_of(result_file())
+               if row['size'] == SIZE and int(row['step']) == STEPS == int(row['of_steps'])]
     if not results:
         print('Nothing is trained yet.')
         return
@@ -438,10 +485,10 @@ def summary():
           f'held-back positions (smaller is better); match against {MATCH_AGAINST} with {MATCH_SIMULATIONS} simulations')
     for row in results:
         name = row['design'] + (f":{row['seed']}" if int(row['seed']) else '')
-        line = (f"  {name:5} {DESIGNS[row['design']]:42} distance {float(row['distance']):.4f}  value error "
+        line = (f"  {name:6} {DESIGNS[row['design']]:42} distance {float(row['distance']):.4f}  value error "
                 f"{float(row['value_error']):.4f}  {int(row['weights']) / 1e6:.2f}M weights  "
                 f"{float(row['seconds']) / 60:.0f} min")
-        played = [POINTS[g['result']] for g in games if g['a'] == name and g['b'] == MATCH_AGAINST
+        played = [POINTS[g['result']] for g in games if g['a'] == match_name(name) and g['b'] == match_name(MATCH_AGAINST)
                   and int(g['simulations']) == MATCH_SIMULATIONS]
         if played:
             line += (f'  match {np.mean(played):.1%} (+-{np.std(played) / math.sqrt(len(played)):.1%}, '
@@ -449,12 +496,37 @@ def summary():
         print(line)
 
 
+def night():
+    global SIZE, STEPS, MATCH_AGAINST
+    start = time.perf_counter()
+    for number, (SIZE, STEPS, names, matches) in enumerate(NIGHT, 1):
+        print(f"\n===== Part {number} of {len(NIGHT)}: size '{SIZE}', {STEPS} steps "
+              f'(after {(time.perf_counter() - start) / 3600:.1f} hours) =====', flush=True)
+        train(names)
+        for players, MATCH_AGAINST in matches:
+            match(players)
+            summary()
+    print(f'\nThe night run is finished after {(time.perf_counter() - start) / 3600:.1f} hours.')
+
+
 if __name__ == '__main__':
-    command, names = (sys.argv[1:2] or ['summary'])[0], sys.argv[2:] or PLAN
+    command, names = (sys.argv[1:2] or ['summary'])[0], [a for a in sys.argv[2:] if '=' not in a] or PLAN
+    for argument in sys.argv[2:]:
+        if argument.startswith('vs='):
+            MATCH_AGAINST = argument[3:]
+        elif argument.startswith('size='):
+            SIZE = argument[5:]
+        elif argument.startswith('steps='):
+            STEPS = int(argument[6:])
+        elif '=' in argument:
+            raise SystemExit(f"'{argument}' is not understood. Possible: vs=D5, size=large, steps=40000.")
     if command == 'speed':
         speed()
     elif command == 'train':
         train(names)
     elif command == 'match':
         match(names)
-    summary()
+    elif command == 'night':
+        night()
+    if command != 'night':
+        summary()
