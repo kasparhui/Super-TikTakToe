@@ -32,7 +32,7 @@ SIZE = 'medium'                 # channels and blocks of every design (see NN.MO
 STEPS = 6000                    # learning steps per design, 256 positions each (about 3 times every position)
 HELD_OUT = 0.1                  # the newest positions are not learned from, only tested on
 CHECK_EVERY = 1000              # steps between two measurements on the held-back positions
-PLAN = ['D0', 'D0:1', 'D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7']
+PLAN = ['D0', 'D0:1', 'D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'C1', 'C2']
 MATCH_AGAINST = 'D0'            # every other design plays against this one
 MATCH_OPENINGS = 128            # 2 games per opening
 MATCH_SIMULATIONS = 200
@@ -47,7 +47,10 @@ DESIGNS = {
     'D5': 'line layers (small boards and big board)',
     'D6': 'exact facts as input',
     'D7': 'whole body on the 3x3 big board',
+    'C1': 'D1 and D5 together',
+    'C2': 'D1, D4, D5 and D6 together',
 }
+COMBINED = {'C1': ('inside', 'lines'), 'C2': ('inside', 'reverse', 'lines', 'exact')}
 
 # ----------------------------------------------------------------------------
 # fixed tables of the game's structure (cells are numbered as in the 9x9 picture)
@@ -265,6 +268,8 @@ def create(design, size=None):
     if design == 'D7':
         return BigBoardNet(**shape)
     changed = {'D1': 'inside', 'D2': 'learned', 'D3': 'track', 'D4': 'reverse', 'D5': 'lines', 'D6': 'exact'}
+    if design in COMBINED:
+        return DesignNet(**shape, **{part: True for part in COMBINED[design]})
     if design not in changed:
         raise SystemExit(f"There is no design '{design}'. The designs are: {', '.join(DESIGNS)}.")
     return DesignNet(**shape, **{changed[design]: True})

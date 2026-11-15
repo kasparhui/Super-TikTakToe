@@ -151,6 +151,19 @@ The main line of the search grows by about 2 to 3 moves per doubling of the simu
   why is not known. The card reports being busy 78% of the time at 512. Next lever: make the network itself
   cheaper on the card (settings of the graphics library, a faster design), not more games at once.
 
+- **Faster ways to run the network on the L4 (measured 15 November 2026, `pretest.py card`, large, positions per second at 512 / 1024 / 2048 at once):**
+  as now 66,400 / 58,000 / 41,900; all rearrangements together (normalisation worked into the filters, other
+  memory layout, whole network in half precision) 94,400 / 85,300 / 65,200 = 1.4 times; the same translated
+  into faster code (`torch.compile`) 124,600 / 113,700 / 87,000 = 1.9 times. Move probabilities differ from full
+  precision by 0.002 to 0.003, as now. Copying to and from the card is under 7% of a question; the network
+  itself gets slower per position in bigger groups, cause not known.
+- **Built into the search (15 November 2026, `FAST_PLAY` and `COMPILE` in `src/Tic_Tac_Toe_NN.py`):** on Nvidia
+  cards the search asks a rearranged, translated copy of the network. The copy is brought up to date whenever
+  the weights change, is compared with the network itself at the first question after every change, and switches
+  itself off with a message if it disagrees. Checked on the laptop for equal answers; **not yet run on Colab**.
+  Expected from the numbers above: rounds about 1.4 times as fast, about 1.7 times with the translation (guess).
+  `pretest.py bottleneck` part 3 measures it. Only today's design is covered; a new design needs its own copy rule.
+
 ## Known problems
 
 - **Half precision fails in rare positions** (13 of 249,000 at round 32, more later): a number inside the network gets too big and the answer is "not a number". This ruined the network in round 33. Now those positions are asked again in full precision, damaged positions never reach the memory, and learning stops without saving if the loss is not a number. Which layer overflows is not known.
@@ -256,6 +269,23 @@ bigger network; the training tests below come first. Still open from step 2: lar
      only because of how it is built); D2 12,700; D3 13,000; D4 13,100; D5 10,400; D6 13,000; D7 35,000.
      Learning takes 6 to 9 minutes per design (D7 3 minutes).
    - Limit of this screening: it shows how well a design learns given lessons, not how it trains itself; step 3 checks that.
+   - **First results (15 November 2026, medium size, 6000 steps; distance to the search's move choices and
+     value error on the 60,000 held-back positions, smaller is better):**
+
+     | Design | Distance | Value error |
+     |---|---|---|
+     | D0 today's design (two runs) | 0.2848, 0.2757 | 0.1361, 0.1330 |
+     | D1 filters inside the small board | 0.2460 | 0.1297 |
+     | D2 learned small-board summary | 0.2732 | 0.1319 |
+     | D3 permanent board track | 0.2826 | 0.1340 |
+     | D4 reverse of the sending rule | 0.2668 | 0.1331 |
+     | D5 line layers | 0.2323 | 0.1284 |
+     | D6 exact facts as input | 0.2680 | 0.1335 |
+     | D7 body on the 3x3 big board | 0.3173 | 0.1459 |
+
+     Reading: the two baseline runs differ by 0.009, so D1 and D5 are clear gains, D4 and D6 small ones at
+     the edge of the noise, D2 and D3 none. D7 is clearly less exact but 2.6 times as fast. Running next:
+     C1 (D1 and D5 together), C2 (D1, D4, D5, D6 together), then the matches against D0.
 3. **Confirm on Colab:** the winning design from scratch for 60 rounds with large's settings, compared with
    large's log at the same rounds (14% at 20, 28% at 40, 35% at 60). About 2 to 4 units. Stop if not clearly ahead.
 4. **The real run** with what passed, on the remaining units (about 40).

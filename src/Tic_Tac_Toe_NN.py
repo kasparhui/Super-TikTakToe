@@ -14,6 +14,7 @@ Output: policy  81 numbers (logits), one per cell of the 9x9 picture
 Training is done with train.py, playing with the 'neural_net' player type.
 """
 import os
+import weakref
 
 import numpy as np
 import torch
@@ -38,6 +39,15 @@ MODEL_DIR = (os.environ.get('SUPER_TTT_MODELS')
 # On Nvidia cards the search asks the network in half precision, which is faster there.
 # It has no effect on Apple chips or the processor, and learning always uses full precision.
 HALF_PRECISION = True
+# On Nvidia cards the search also asks a copy of the network that is rearranged for speed (the
+# normalisation layers worked into the filters, another memory layout, everything in half
+# precision) and, with COMPILE, translated once into faster code. Measured on Colab's L4 with the
+# large network: 1.4 times as many positions per second, 1.9 times with COMPILE. The answers
+# differ from full precision as little as before (move probabilities by about 0.002).
+FAST_PLAY = True
+COMPILE = True
+COMPILE_FROM = 256          # smaller questions are not worth translating
+COMPILE_STEP = 64           # questions are filled up to a multiple of this, so that few sizes occur
 
 # A move is the number  big_field * 9 + little_field  (as in game.Board).
 # MOVE_TO_SPATIAL[move] is where that cell lies in the flattened 9x9 picture.
@@ -178,14 +188,115 @@ def load_model(variant=DEFAULT_MODEL, device='cpu', iteration=None):
     return model
 
 
+def folded(model):
+    """The same network with the normalisation layers worked into the filters before them
+    (the same answers with fewer layers; only for playing, not for learning)."""
+    import copy
+    from torch.nn.utils.fusion import fuse_conv_bn_eval
+    model = copy.deepcopy(model).eval()
+    for block in model.blocks:
+        block.conv1, block.bn1 = fuse_conv_bn_eval(block.conv1, block.bn1), nn.Identity()
+        block.conv2, block.bn2 = fuse_conv_bn_eval(block.conv2, block.bn2), nn.Identity()
+    model.policy_conv, model.policy_bn = fuse_conv_bn_eval(model.policy_conv, model.policy_bn), nn.Identity()
+    model.value_conv, model.value_bn = fuse_conv_bn_eval(model.value_conv, model.value_bn), nn.Identity()
+    return model
+
+
+class _FastCopy:
+    """The copy of a network that the search asks on Nvidia cards. It follows the network: when
+    the weights have changed (after learning), the copy is brought up to date before it is asked."""
+
+    def __init__(self, model):
+        self.tensors = list(model.parameters()) + list(model.buffers())
+        self.net = folded(model).to(memory_format=torch.channels_last).half()
+        self.version = self._version()
+        self.compiled = None
+        self.compile = COMPILE
+        self.checked = False        # after a check: which ways of asking agree with the network
+        self.broken = False
+
+    def _version(self):
+        return sum(tensor._version for tensor in self.tensors)      # changes with every change of a weight
+
+    def _translated(self):
+        if self.compiled is None:
+            import torch._dynamo
+            for limit in ('recompile_limit', 'cache_size_limit'):   # one translation per size of question
+                if hasattr(torch._dynamo.config, limit):
+                    setattr(torch._dynamo.config, limit, 64)
+            self.compiled = torch.compile(self.net)
+        return self.compiled
+
+    def _answer(self, x, translated):
+        count = len(x)
+        x = x.half()
+        if translated:
+            size = -(-count // COMPILE_STEP) * COMPILE_STEP
+            if size > count:
+                x = torch.cat([x, x.new_zeros((size - count,) + x.shape[1:])])
+        x = x.contiguous(memory_format=torch.channels_last)
+        logits, values = (self._translated() if translated else self.net)(x)
+        return logits[:count], values[:count]
+
+    def ask(self, model, x):
+        """Returns (logits, values), or None if the copy cannot be trusted (then the network itself is asked)."""
+        if self.broken:
+            return None
+        version = self._version()
+        if version != self.version:
+            self.net.load_state_dict(folded(model).state_dict())
+            self.version, self.checked = version, False
+        translated = self.compile and len(x) >= COMPILE_FROM
+        if self.checked.get(translated) if isinstance(self.checked, dict) else False:
+            return self._answer(x, translated)
+        # the first question after every change of the weights: compare with the network itself
+        if not isinstance(self.checked, dict):
+            self.checked = {}
+        moves = torch.softmax(model(x)[0].float(), dim=1)
+        for way in ([True, False] if translated else [False]):
+            try:
+                logits, values = self._answer(x, way)
+                fine = torch.isfinite(logits).all(dim=1)
+                difference = float((torch.softmax(logits.float(), dim=1) - moves)[fine].abs().max()) if fine.any() else 0.0
+                if difference > 0.05:
+                    raise RuntimeError(f'its move probabilities differ by {difference:.3f} from the ones of the network')
+                self.checked[way] = True
+                return logits, values
+            except Exception as error:
+                what = 'translation of the network into faster code' if way else 'faster copy of the network'
+                print(f'The {what} is switched off ({type(error).__name__}: {str(error)[:200]}). '
+                      f'Everything else works as before.', flush=True)
+                if way:
+                    self.compile = False
+                else:
+                    self.broken = True
+        return None
+
+
+_fast_copies = weakref.WeakKeyDictionary()
+
+
+def _fast_copy(model):
+    if not isinstance(model, UltimateTicTacToeNet) or model.training:
+        return None
+    if model not in _fast_copies:
+        _fast_copies[model] = _FastCopy(model)
+    return _fast_copies[model]
+
+
 def predict(model, planes, device):
     """planes: numpy batch x 6 x 9 x 9  ->  numpy (logits: batch x 81, values: batch)"""
     half = HALF_PRECISION and torch.device(device).type == 'cuda'
     x = torch.from_numpy(planes).to(device)
-    with torch.inference_mode(), torch.autocast('cuda', dtype=torch.float16, enabled=half):
-        logits, values = model(x)
+    fast = _fast_copy(model) if FAST_PLAY == 'always' or (FAST_PLAY and half) else None
+    with torch.inference_mode():
+        answer = fast.ask(model, x) if fast is not None else None
+        if answer is None:
+            with torch.autocast('cuda', dtype=torch.float16, enabled=half):
+                answer = model(x)
+        logits, values = answer
     logits, values = logits.float().cpu().numpy(), values.float().cpu().numpy()
-    if half:
+    if half or fast is not None:
         logits, values = _repair(model, x, logits, values)
     return logits, values
 

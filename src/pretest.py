@@ -256,6 +256,22 @@ def bottleneck(variant=None):
               f'({first / per_move:.2f} times the speed of {BOTTLENECK_PARALLEL_GAMES[0]}) | '
               f'search tree (processor) {1 - share:.0%}, network (card, with copying) {share:.0%}{watch.text()}',
               flush=True)
+    best = train.PARALLEL_GAMES
+    print(f'\n3. Self-play with {best} games at once and the faster ways to ask the network')
+    usual = (NN.FAST_PLAY, NN.COMPILE)
+    for name, fast, translate in (('as before', False, False), ('rearranged copy', True, False),
+                                  ('rearranged copy, translated into faster code', True, True)):
+        NN.FAST_PLAY, NN.COMPILE = fast, translate
+        NN._fast_copies.clear()
+        start = time.perf_counter()
+        _search_speed(model, device, best, 20)              # the translation happens here, once
+        prepare = time.perf_counter() - start
+        with _CardWatch() as watch:
+            per_move, share = _search_speed(model, device, best, simulations)
+        print(f'   {name}: {1000 * per_move:.1f} ms per move of a game | network {share:.0%} of the time'
+              f'{watch.text()} | getting ready took {prepare:.0f} s', flush=True)
+    NN.FAST_PLAY, NN.COMPILE = usual
+    NN._fast_copies.clear()
     print('\nSend these lines back. If the processor share is high, spreading the search tree over all '
           'cores helps most;\nif the network share is high, more games at once help.')
 
@@ -272,18 +288,7 @@ def _wait(device):
         torch.mps.synchronize()
 
 
-def _folded(model):
-    """The same network with the normalisation layers worked into the filters before them
-    (the same answers, fewer layers; only possible for playing, not for learning)."""
-    import copy
-    from torch.nn.utils.fusion import fuse_conv_bn_eval
-    model = copy.deepcopy(model).eval()
-    for block in model.blocks:
-        block.conv1, block.bn1 = fuse_conv_bn_eval(block.conv1, block.bn1), torch.nn.Identity()
-        block.conv2, block.bn2 = fuse_conv_bn_eval(block.conv2, block.bn2), torch.nn.Identity()
-    model.policy_conv, model.policy_bn = fuse_conv_bn_eval(model.policy_conv, model.policy_bn), torch.nn.Identity()
-    model.value_conv, model.value_bn = fuse_conv_bn_eval(model.value_conv, model.value_bn), torch.nn.Identity()
-    return model
+_folded = NN.folded
 
 
 def _ask(model, x, precision):
