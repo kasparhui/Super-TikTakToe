@@ -143,6 +143,14 @@ The main line of the search grows by about 2 to 3 moves per doubling of the simu
 - Mac: 16 and 31 minutes per round for large.
 - 100 units were bought; about 65 should be left after the large training and its tests.
 
+- **What limits self-play on the L4 (measured 15 November 2026, `pretest.py bottleneck`, large, 400 simulations, 12 processor cores):**
+  the network on the card takes 89% of the time, the search tree on one processor core only 11%. So more
+  processor cores would gain at most about 10%. Network alone: 35,700 positions per second at 256 at once,
+  62,800 at 512, 56,200 at 1024, 40,900 at 2048. Self-play: 13.0 / 7.0 / 7.8 / 10.7 ms per move of a game at
+  256 / 512 / 1024 / 2048 games at once. So 512 is the best size, and bigger groups are slower per position;
+  why is not known. The card reports being busy 78% of the time at 512. Next lever: make the network itself
+  cheaper on the card (settings of the graphics library, a faster design), not more games at once.
+
 ## Known problems
 
 - **Half precision fails in rare positions** (13 of 249,000 at round 32, more later): a number inside the network gets too big and the answer is "not a number". This ruined the network in round 33. Now those positions are asked again in full precision, damaged positions never reach the memory, and learning stops without saving if the loss is not a number. Which layer overflows is not known.
@@ -157,6 +165,7 @@ The main line of the search grows by about 2 to 3 moves per doubling of the simu
 - **Go back to a snapshot:** `!python -u src/train.py restore <round>`
 - **Run a training test:** the notebook `colab_experiment_<name>.ipynb`, or `python3 src/train.py experiment <name>`. After a disconnect run all cells again.
 - **Find what limits the speed:** `!python -u src/pretest.py bottleneck` (about 3 minutes; shows processor cores, how the time splits between search tree and network, and 256 to 2048 games at once). Stop the training cell first; it continues afterwards.
+- **Try faster ways to run the network on the card:** `!python -u src/pretest.py card` (about 3 minutes; shows where the time of one question goes and the speed of the same network with other settings of the graphics library). Changes nothing in the training.
 - **Test snapshots against medium:** `colab_test.ipynb` (multiples of 40, 500 and 2000 simulations, 256 games, only what is missing).
 - **Chart of the log on the laptop:** copy `alphazero_large_log.csv` into `models/`, then `/usr/bin/python3 src/plot_log.py large`.
 - **Files on Drive** (`Super-TikTakToe-models`): `alphazero_large.pt` (newest), `snapshots/`, the log, the memory, `alphazero_medium.pt` (needed for the checks).

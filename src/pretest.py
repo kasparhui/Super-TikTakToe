@@ -5,6 +5,8 @@
     python3 src/pretest.py bottleneck  what limits the speed of self-play: the processor (search tree) or
                                        the graphics card (network)? (about 3 minutes; can run between two
                                        training iterations)
+    python3 src/pretest.py card        ways to run the same network faster on the graphics card, and where
+                                       the time of one question to the network goes (about 3 minutes)
     python3 src/pretest.py resume      does saving and continuing work? run it twice (2-3 minutes each)
     python3 src/pretest.py capacity    does a bigger network learn more from the same games? (20-40 minutes)
     python3 src/pretest.py precision   half against full precision with the trained network on its own
@@ -41,6 +43,10 @@ COLAB_UNITS_PER_HOUR = {'T4': 1.2, 'L4': 1.7, 'A100': 5.4}
 # bottleneck
 BOTTLENECK_PARALLEL_GAMES = (256, 512, 1024, 2048)
 BOTTLENECK_MOVES = 3                # every game is played for this many moves
+
+# card
+CARD_BATCHES = (512, 1024, 2048)
+CARD_SECONDS = 2.0                  # how long every way is measured per batch size
 
 # resume
 RESUME_ITERATIONS = 2               # iterations per run
@@ -255,6 +261,130 @@ def bottleneck(variant=None):
 
 
 # ----------------------------------------------------------------------------
+# card
+# ----------------------------------------------------------------------------
+
+def _wait(device):
+    """Waits until the card has finished everything it was asked to do."""
+    if device.type == 'cuda':
+        torch.cuda.synchronize()
+    elif device.type == 'mps':
+        torch.mps.synchronize()
+
+
+def _folded(model):
+    """The same network with the normalisation layers worked into the filters before them
+    (the same answers, fewer layers; only possible for playing, not for learning)."""
+    import copy
+    from torch.nn.utils.fusion import fuse_conv_bn_eval
+    model = copy.deepcopy(model).eval()
+    for block in model.blocks:
+        block.conv1, block.bn1 = fuse_conv_bn_eval(block.conv1, block.bn1), torch.nn.Identity()
+        block.conv2, block.bn2 = fuse_conv_bn_eval(block.conv2, block.bn2), torch.nn.Identity()
+    model.policy_conv, model.policy_bn = fuse_conv_bn_eval(model.policy_conv, model.policy_bn), torch.nn.Identity()
+    model.value_conv, model.value_bn = fuse_conv_bn_eval(model.value_conv, model.value_bn), torch.nn.Identity()
+    return model
+
+
+def _ask(model, x, precision):
+    """precision: 'full', 'autocast' (as the search does it now) or 'half' (the whole network in half precision)."""
+    with torch.inference_mode():
+        if precision == 'autocast':
+            with torch.autocast(x.device.type, dtype=torch.float16, enabled=x.device.type == 'cuda'):
+                return model(x)
+        return model(x.half() if precision == 'half' else x)
+
+
+def _card_speed(model, x, precision):
+    device = x.device
+    for _ in range(5):
+        _ask(model, x, precision)
+    _wait(device)
+    start, calls = time.perf_counter(), 0
+    while time.perf_counter() - start < CARD_SECONDS:
+        _ask(model, x, precision)
+        calls += 1
+    _wait(device)
+    return calls * len(x) / (time.perf_counter() - start)
+
+
+def card(variant=None):
+    import copy
+    variant = variant or train.MODEL
+    device = NN.choose_device(train.DEVICE)
+    trained = os.path.exists(NN.checkpoint_path(variant))
+    model = NN.load_model(variant, device) if trained else NN.create_model(variant).to(device).eval()
+    print(f"Ways to run the '{variant}' network ({'trained' if trained else 'untrained'}) on {machine(device)}, "
+          f'torch {torch.__version__}\n')
+    real = _real_positions(model, device).astype(np.float32)
+    positions = {batch: np.ascontiguousarray(np.resize(real, (batch,) + real.shape[1:])) for batch in CARD_BATCHES}
+
+    print('1. Where the time of one question goes now (milliseconds)')
+    for batch, planes in positions.items():
+        parts = np.zeros(4)
+        for _ in range(3):
+            NN.predict(model, planes, device)
+        for _ in range(20):
+            _wait(device)
+            t0 = time.perf_counter()
+            x = torch.from_numpy(planes).to(device)
+            _wait(device)
+            t1 = time.perf_counter()
+            logits, values = _ask(model, x, 'autocast')
+            _wait(device)
+            t2 = time.perf_counter()
+            logits, values = logits.float().cpu().numpy(), values.float().cpu().numpy()
+            t3 = time.perf_counter()
+            broken = int((~(np.isfinite(logits).all(axis=1) & np.isfinite(values))).sum())
+            NN.predict(model, planes, device)
+            parts += (t1 - t0, t2 - t1, t3 - t2, time.perf_counter() - t3)
+        to_card, network, back, whole = 1000 * parts / 20
+        print(f'   {batch} positions: to the card {to_card:.2f}, network {network:.2f}, back {back:.2f} | the whole '
+              f'question as the search asks it {whole:.2f} = {1000 * batch / whole:,.0f} positions per second'
+              + (f' | {broken} positions needed full precision' if broken else ''), flush=True)
+
+    x = {batch: torch.from_numpy(planes).to(device) for batch, planes in positions.items()}
+    legal = x[CARD_BATCHES[0]][:, 2].reshape(-1, 81) > 0
+
+    def moves(logits):
+        return torch.softmax(logits.float().masked_fill(~legal, -1e9), dim=1)
+
+    reference = moves(_ask(model, x[CARD_BATCHES[0]], 'full')[0])
+    fast = torch.backends.cudnn
+
+    def layout(net):
+        return copy.deepcopy(net).to(memory_format=torch.channels_last)
+
+    ways = [
+        ('full precision', lambda: model, 'full', False),
+        ('as now (half precision, switched per layer)', lambda: model, 'autocast', False),
+        ('+ the library tries out the fastest method', lambda: model, 'autocast', True),
+        ('+ other memory layout', lambda: layout(model), 'autocast', True),
+        ('+ normalisation worked into the filters', lambda: _folded(model), 'autocast', True),
+        ('+ whole network in half precision', lambda: copy.deepcopy(model).half(), 'half', True),
+        ('all of these together', lambda: layout(_folded(model)).half(), 'half', True),
+        ('all together, compiled', lambda: torch.compile(layout(_folded(model)).half()), 'half', True),
+    ]
+    print(f'\n2. The network alone on the card, positions per second at {", ".join(map(str, CARD_BATCHES))} at once '
+          '(every "+" line is "as now" with that one thing added)')
+    for name, build, precision, tuned in ways:
+        fast.benchmark = tuned
+        try:
+            net = build()
+            rates = [_card_speed(net, x[batch], precision) for batch in CARD_BATCHES]
+            answer = moves(_ask(net, x[CARD_BATCHES[0]], precision)[0])
+            difference = float((answer - reference).abs().max())
+            line = ' | '.join(f'{rate:,.0f}' for rate in rates) + f' | largest difference of a move probability {difference:.4f}'
+            if not bool(torch.isfinite(answer).all()):
+                line += ' (some answers are not a number)'
+        except Exception as error:
+            line = f'did not work here: {type(error).__name__}: {str(error)[:120]}'
+        print(f'   {name}: {line}', flush=True)
+    fast.benchmark = False
+    print('\nSend these lines back.')
+
+
+# ----------------------------------------------------------------------------
 # resume
 # ----------------------------------------------------------------------------
 
@@ -408,12 +538,12 @@ def precision():
 
 
 if __name__ == '__main__':
-    tests = {'speed': speed, 'bottleneck': bottleneck, 'resume': resume, 'capacity': capacity, 'precision': precision}
+    tests = {'speed': speed, 'bottleneck': bottleneck, 'card': card, 'resume': resume, 'capacity': capacity, 'precision': precision}
     if len(sys.argv) < 2 or sys.argv[1] not in tests:
         raise SystemExit(__doc__)
     if sys.argv[1] == 'capacity' and len(sys.argv) > 2:
         capacity(int(sys.argv[2]))
-    elif sys.argv[1] in ('speed', 'bottleneck') and len(sys.argv) > 2:
+    elif sys.argv[1] in ('speed', 'bottleneck', 'card') and len(sys.argv) > 2:
         tests[sys.argv[1]](sys.argv[2])
     else:
         tests[sys.argv[1]]()
