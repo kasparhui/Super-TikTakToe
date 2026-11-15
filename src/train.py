@@ -13,6 +13,10 @@ The settings below are the plan for the 'large' network (about 250 iterations).
 The numbers in LEARNING_RATE_DECAY, SIMULATIONS_GROWTH and BUFFER_GROWTH count
 iterations of that training; for another network they have to be chosen again.
 On Google Colab: see colab_train.ipynb.
+
+    python3 src/train.py restore 120             goes back to the snapshot of an iteration
+    python3 src/train.py experiment more_games   continues the finished network with one thing
+                                                 changed, in its own folder (see EXPERIMENTS below)
 """
 import csv
 import os
@@ -89,6 +93,19 @@ REFERENCE_SIMULATIONS = 100 # search size of both networks in these games
 SAVE_BUFFER_EVERY = 5       # the collected positions are large, so they are saved less often
 SNAPSHOT_EVERY = 4          # every this many iterations a copy of the network is kept in
                             # models/snapshots/, so you can go back to an earlier one (0 = never)
+
+# Tests: a finished training is continued with one thing changed, in a folder of its own
+# (models/experiments/<name>/), so the finished network is not touched.
+#     python3 src/train.py experiment more_games
+# Every test changes the settings above as written here. On Google Colab: colab_experiment.ipynb.
+EXPERIMENT_START = 240      # the tests continue the network of MODEL after this iteration
+EXPERIMENT_BASELINE = 4     # this many of its last checks are played again with the test's number of games
+EXPERIMENTS = {
+    # twice the games per iteration, every position used half as often: the same amount of learning
+    'more_games': {'GAMES_PER_ITERATION': 1024, 'REPLAY_RATIO': 2, 'ITERATIONS': 260, 'REFERENCE_GAMES': 512},
+    # twice the simulations per move from iteration 241 on: more accurate lessons
+    'more_simulations': {'SIMULATIONS_GROWTH': {100: 400, 240: 800}, 'ITERATIONS': 272, 'REFERENCE_GAMES': 512},
+}
 # ------------------------------------------------------------------------
 
 
@@ -606,6 +623,83 @@ def main():
         print(f'Saved to {checkpoint_file}. Start the script again to continue.')
 
 
+def _copy(source, target):
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    shutil.copyfile(source, target + '.tmp')
+    os.replace(target + '.tmp', target)
+
+
+def experiment(name):
+    """Continues the finished network with the changed settings of EXPERIMENTS[name], in the folder
+    models/experiments/<name>/. The first time, the network, its memory, its log and the last
+    snapshots are copied there; later calls continue the test."""
+    if name not in EXPERIMENTS:
+        raise SystemExit(f"There is no test '{name}'. The tests are: {', '.join(EXPERIMENTS)}.")
+    main_folder = NN.MODEL_DIR
+    folder = os.path.join(main_folder, 'experiments', name)
+    checkpoint_file, buffer_file, log_file = paths(MODEL)
+    started = os.path.exists(os.path.join(folder, os.path.basename(checkpoint_file)))
+    if not started:
+        snapshot = snapshot_path(MODEL, EXPERIMENT_START)
+        if not os.path.exists(checkpoint_file) or not os.path.exists(snapshot):
+            raise SystemExit(f"The test needs the '{MODEL}' network after iteration {EXPERIMENT_START}, "
+                             f'but {snapshot} is not there.')
+        newest = NN.saved_iteration(MODEL)
+        if newest != EXPERIMENT_START or not os.path.exists(buffer_file):
+            raise SystemExit(f"The test starts after iteration {EXPERIMENT_START} and needs the memory of that moment, "
+                             f"but the '{MODEL}' network in {main_folder} is at iteration {newest}"
+                             + ('' if os.path.exists(buffer_file) else ' and has no saved memory') + '.')
+        print(f"Setting up the test '{name}' in {folder} ...", flush=True)
+        copies = [(snapshot, os.path.basename(checkpoint_file)), (buffer_file, os.path.basename(buffer_file))]
+        if os.path.exists(log_file):
+            copies.append((log_file, os.path.basename(log_file)))
+        if REFERENCE and os.path.exists(NN.checkpoint_path(REFERENCE)):
+            copies.append((NN.checkpoint_path(REFERENCE), os.path.basename(NN.checkpoint_path(REFERENCE))))
+        for back in range(EXPERIMENT_BASELINE):         # for the baseline with the test's number of games
+            earlier = snapshot_path(MODEL, EXPERIMENT_START - back * REFERENCE_EVERY)
+            if os.path.exists(earlier):
+                copies.append((earlier, os.path.relpath(earlier, main_folder)))
+        for source, target in copies[::-1]:             # the network last: it marks the test as set up
+            _copy(source, os.path.join(folder, target))
+    NN.MODEL_DIR = folder
+    globals().update(EXPERIMENTS[name])
+    print(f"Test '{name}' ({'continued' if started else 'new'}): "
+          + ', '.join(f'{setting} = {value}' for setting, value in EXPERIMENTS[name].items()), flush=True)
+    main()
+    experiment_summary()
+
+
+def experiment_summary():
+    """Compares the checks of the test with the checks of the network it started from."""
+    log_file = paths(MODEL)[2]
+    columns = [f'wins_{REFERENCE}', f'ties_{REFERENCE}', f'losses_{REFERENCE}']
+    if not REFERENCE or not os.path.exists(log_file):
+        return
+    with open(log_file, newline='') as file:
+        rows = [row for row in csv.DictReader(file) if all(row.get(c) not in ('', None) for c in columns)]
+    checks = {int(row['iteration']): [int(float(row[c])) for c in columns] for row in rows}
+    checks = {i: r for i, r in checks.items() if sum(r) == REFERENCE_GAMES}
+    before = [checks[i] for i in sorted(checks) if i <= EXPERIMENT_START][-EXPERIMENT_BASELINE:]
+    after = [checks[i] for i in sorted(checks) if i > EXPERIMENT_START]
+
+    def points(results):
+        wins, ties, losses = (sum(part) for part in zip(*results))
+        games = wins + ties + losses
+        mean = (wins + 0.5 * ties) / games
+        spread = (wins * (1 - mean) ** 2 + ties * (0.5 - mean) ** 2 + losses * mean ** 2) / games
+        return mean, (spread / games) ** 0.5, games
+
+    print(f"\nAgainst '{REFERENCE}' with {REFERENCE_GAMES} games per check:")
+    if before:
+        mean, error, games = points(before)
+        print(f'  before the test ({len(before)} checks up to iteration {EXPERIMENT_START}, played again): '
+              f'{mean:.1%} (+-{error:.1%}, {games} games)')
+    for label, part in (('all checks of the test', after), ('its last 3 checks', after[-3:])):
+        if part:
+            mean, error, games = points(part)
+            print(f'  {label}: {mean:.1%} (+-{error:.1%}, {games} games)')
+
+
 def restore(iteration):
     """Goes back to the snapshot of this iteration: it becomes the newest network, later rows are
     taken out of the log, and damaged positions are taken out of the memory."""
@@ -647,5 +741,7 @@ if __name__ == '__main__':
     import sys
     if len(sys.argv) == 3 and sys.argv[1] == 'restore':
         restore(int(sys.argv[2]))
+    elif len(sys.argv) == 3 and sys.argv[1] == 'experiment':
+        experiment(sys.argv[2])
     else:
         main()

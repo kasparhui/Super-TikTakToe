@@ -167,3 +167,7 @@ models/pretest/
 
 # macOS
 .DS_Store
+
+# uttt.ai for comparison: their files and the match against them (local only)
+external/
+src/test_vs_utttai.py

@@ -26,7 +26,7 @@ PLAYERS = {
     'O': {'type': 'human'},
     'X': {'type': 'neural_net', 'model': 'medium', 'simulations': 4000},
 }
-STARTING_PLAYER = 'X'
+STARTING_PLAYER = 'O'
 # ------------------------------------------------------------------------
 
 TEXT_HEIGHT = 70
