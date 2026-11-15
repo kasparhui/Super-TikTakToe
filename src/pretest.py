@@ -2,6 +2,9 @@
 
     python3 src/pretest.py speed       how long a training iteration takes on this machine (about 5 minutes)
     python3 src/pretest.py speed xlarge    the same for another network size than the one in train.py
+    python3 src/pretest.py bottleneck  what limits the speed of self-play: the processor (search tree) or
+                                       the graphics card (network)? (about 3 minutes; can run between two
+                                       training iterations)
     python3 src/pretest.py resume      does saving and continuing work? run it twice (2-3 minutes each)
     python3 src/pretest.py capacity    does a bigger network learn more from the same games? (20-40 minutes)
     python3 src/pretest.py precision   half against full precision with the trained network on its own
@@ -34,6 +37,10 @@ POSITIONS_PER_ITERATION = 26700     # 512 games of about 52 moves (from the log 
 ITERATIONS_PLANNED = 250            # for the estimate of the whole training
 # Compute units per hour on Google Colab, measured by users in 2026 (they change; see Colab's "Resources")
 COLAB_UNITS_PER_HOUR = {'T4': 1.2, 'L4': 1.7, 'A100': 5.4}
+
+# bottleneck
+BOTTLENECK_PARALLEL_GAMES = (256, 512, 1024, 2048)
+BOTTLENECK_MOVES = 3                # every game is played for this many moves
 
 # resume
 RESUME_ITERATIONS = 2               # iterations per run
@@ -191,6 +198,63 @@ def speed(variant=None):
 
 
 # ----------------------------------------------------------------------------
+# bottleneck
+# ----------------------------------------------------------------------------
+
+class _CardWatch:
+    """Asks nvidia-smi twice a second how busy the card is (percent of the time it is computing)."""
+
+    def __enter__(self):
+        import subprocess
+        self.busy, self.process = [], None
+        try:
+            self.process = subprocess.Popen(
+                ['nvidia-smi', '--query-gpu=utilization.gpu', '--format=csv,noheader,nounits', '-lms', '500'],
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        except OSError:
+            pass
+        return self
+
+    def __exit__(self, *error):
+        if self.process:
+            self.process.terminate()
+            self.busy = [int(line) for line in self.process.communicate()[0].split() if line.isdigit()]
+
+    def text(self):
+        return f', card busy {np.mean(self.busy):.0f}% of the time' if self.busy else ''
+
+
+def bottleneck(variant=None):
+    variant = variant or train.MODEL
+    device = NN.choose_device(train.DEVICE)
+    trained = os.path.exists(NN.checkpoint_path(variant))
+    model = NN.load_model(variant, device) if trained else NN.create_model(variant).to(device).eval()
+    simulations = max(train.simulations(i) for i in range(train.ITERATIONS))
+    cores = len(os.sched_getaffinity(0)) if hasattr(os, 'sched_getaffinity') else os.cpu_count()
+    print(f"What limits self-play? '{variant}' network ({'trained' if trained else 'untrained'}) on "
+          f'{machine(device)} ({cores} usable), {simulations} simulations per move')
+    print('The search tree runs on ONE processor core; the network runs on the graphics card.\n')
+    print('1. The network alone')
+    for batch in BOTTLENECK_PARALLEL_GAMES:
+        with _CardWatch() as watch:
+            rate = _network_speed(model, device, batch, half=NN.HALF_PRECISION and device.type == 'cuda')
+        print(f'   {batch} positions at once: {rate:,.0f} positions per second{watch.text()}', flush=True)
+    print(f'\n2. Self-play (the first {BOTTLENECK_MOVES} moves of every game)')
+    global SPEED_MOVES
+    SPEED_MOVES, first = BOTTLENECK_MOVES, None
+    for parallel in BOTTLENECK_PARALLEL_GAMES:
+        with _CardWatch() as watch:
+            per_move, share = _search_speed(model, device, parallel, simulations)
+        first = first or per_move
+        print(f'   {parallel} games at once: {1000 * per_move:.1f} ms per move of a game '
+              f'({first / per_move:.2f} times the speed of {BOTTLENECK_PARALLEL_GAMES[0]}) | '
+              f'search tree (processor) {1 - share:.0%}, network (card, with copying) {share:.0%}{watch.text()}',
+              flush=True)
+    print('\nSend these lines back. If the processor share is high, spreading the search tree over all '
+          'cores helps most;\nif the network share is high, more games at once help.')
+
+
+# ----------------------------------------------------------------------------
 # resume
 # ----------------------------------------------------------------------------
 
@@ -344,12 +408,12 @@ def precision():
 
 
 if __name__ == '__main__':
-    tests = {'speed': speed, 'resume': resume, 'capacity': capacity, 'precision': precision}
+    tests = {'speed': speed, 'bottleneck': bottleneck, 'resume': resume, 'capacity': capacity, 'precision': precision}
     if len(sys.argv) < 2 or sys.argv[1] not in tests:
         raise SystemExit(__doc__)
     if sys.argv[1] == 'capacity' and len(sys.argv) > 2:
         capacity(int(sys.argv[2]))
-    elif sys.argv[1] == 'speed' and len(sys.argv) > 2:
-        speed(sys.argv[2])
+    elif sys.argv[1] in ('speed', 'bottleneck') and len(sys.argv) > 2:
+        tests[sys.argv[1]](sys.argv[2])
     else:
         tests[sys.argv[1]]()

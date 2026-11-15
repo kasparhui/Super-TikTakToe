@@ -156,6 +156,7 @@ The main line of the search grows by about 2 to 3 moves per doubling of the simu
 - **Use new code:** stop the training cell, run the code cell, run the training cell.
 - **Go back to a snapshot:** `!python -u src/train.py restore <round>`
 - **Run a training test:** the notebook `colab_experiment_<name>.ipynb`, or `python3 src/train.py experiment <name>`. After a disconnect run all cells again.
+- **Find what limits the speed:** `!python -u src/pretest.py bottleneck` (about 3 minutes; shows processor cores, how the time splits between search tree and network, and 256 to 2048 games at once). Stop the training cell first; it continues afterwards.
 - **Test snapshots against medium:** `colab_test.ipynb` (multiples of 40, 500 and 2000 simulations, 256 games, only what is missing).
 - **Chart of the log on the laptop:** copy `alphazero_large_log.csv` into `models/`, then `/usr/bin/python3 src/plot_log.py large`.
 - **Files on Drive** (`Super-TikTakToe-models`): `alphazero_large.pt` (newest), `snapshots/`, the log, the memory, `alphazero_medium.pt` (needed for the checks).
@@ -198,6 +199,7 @@ bigger network; the training tests below come first. Still open from step 2: lar
 ### 4. If the bigger network is trained (`xlarge`: 128 channels, 10 blocks, about 4 million weights)
 
 - **Cost:** about 1.75 times large per round on the T4; measure on the L4 first (`pretest.py speed xlarge`). With about 65 units left, about 240 rounds should fit, but check the estimate before starting.
+- **Memory on Colab is barely used** (you, 15 November 2026: GPU memory and system memory are mostly free, and units are not a tight limit). So more games at once and a longer memory of positions are both possible in the next run.
 - **Use the card better:** let games carry over from one round to the next, so 1024 or more run at once without making the rounds bigger. This needs a change to the self-play code and a test first. Measure 1024 and 2048 at once with the speed test.
 - **Half precision:** expect the overflow problem again, probably earlier. The repair is in place; finding the layer that overflows and running only that layer in full precision would remove the cause.
 - **Schedule:** do not copy round numbers. Use the same rule as for large: keep the learning rate while the points against the reference keep rising, lower it when they go flat.
@@ -220,11 +222,31 @@ bigger network; the training tests below come first. Still open from step 2: lar
    - Judge: 3 points or more above the baseline is a real gain, 1 point or less is none (each average is
      uncertain by about 1 point). At the low learning rate "no gain" is weaker evidence than a clear gain.
    - Needs: large ended at round 240 and nothing trained after it (the test refuses to start otherwise).
-2. **Design tests on the laptop** (free): same positions (large's memory, last 10% held back), same steps,
-   same cost per position; measure the error on the held-back positions, the speed, and a 256-game match
-   against the baseline design. Baseline twice to know the noise. Variants: whole-board layer; plus board
-   track; exact facts as input; line layers; then the combination. Extra answers (small-board owners,
-   win/tie/loss, value per move) need about 6,000 new games that record those outcomes.
+2. **Design tests on the laptop** (free; list refined 15 November 2026, not started): same positions (large's
+   memory of 600,000, last 10% held back), same steps; measure the error on the held-back positions for move
+   and value separately, the positions per second, and a 256-game match against the baseline design.
+   Because games are the limit, a design counts as better if it is as good and faster, not only if it is more exact.
+   - D0: today's design, twice (shows the noise).
+   - D1: filters that stay inside the small board (no looking across borders), same cost.
+   - D2: the small-board summary made by a learned 3x3 step that knows which cell is which, instead of the average.
+   - D3: a permanent, wide board track (9 small-board descriptions kept through the network), value read from it.
+   - D4: the reverse of the sending rule (each board hears from the 9 cells that send into it).
+   - D5: line layers (8 lines per small board, 8 lines of the big board, shared weights).
+   - D6: exact facts as input (dead stones blanked, cells that win a small board at once, boards that would win
+     the game, free-choice flag).
+   - D7: a body on the 3x3 big board only, as uttt.ai (the extreme of D2/D3; much faster per position).
+   - Then the winners combined, at medium and large size.
+   - Second round, needs about 6,000 new games that record more: win/tie/loss as three chances, final owner of
+     each small board, the search's value per move, the opponent's reply. (The saved value is a mix of result
+     and search value, so win/tie/loss cannot be taken from the old memory.)
+   - Already in place, not a test: the 8 turns and mirrors of the board are used in learning.
+   - Built 15 November 2026 as `src/test_designs.py` (commands: speed, train, match, summary; results in
+     `models/design_tests.csv` and `models/design_matches.csv`). All designs take the usual input, so they
+     work in the search unchanged. Screening is at medium size (64 channels, 6 blocks), 6000 steps.
+   - Speed measured on the laptop (positions per second, asked 512 at a time): D0 13,300; D1 9,000 (slow
+     only because of how it is built); D2 12,700; D3 13,000; D4 13,100; D5 10,400; D6 13,000; D7 35,000.
+     Learning takes 6 to 9 minutes per design (D7 3 minutes).
+   - Limit of this screening: it shows how well a design learns given lessons, not how it trains itself; step 3 checks that.
 3. **Confirm on Colab:** the winning design from scratch for 60 rounds with large's settings, compared with
    large's log at the same rounds (14% at 20, 28% at 40, 35% at 60). About 2 to 4 units. Stop if not clearly ahead.
 4. **The real run** with what passed, on the remaining units (about 40).
