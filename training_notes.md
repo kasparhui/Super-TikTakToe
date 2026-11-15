@@ -1,14 +1,14 @@
 # Training notes: the large network on Google Colab
 
-Last updated: 15 November 2026, at round 196 of the large network (log on the laptop), training nearly finished.
+Last updated: 15 November 2026, after the large network finished at round 240 (log and snapshot test on the laptop).
 This file is the memory of the project's training decisions. It is kept up to date
 whenever something that influences the training changes.
 
 ## Where things stand
 
-- The **large** network (96 channels, 8 blocks, 1.84 million weights) trains from scratch on Colab, on the L4 card.
-- Against the finished medium network (round 240) it was flat at about 46% from round 76 to 116, rose to about **51 to 52%** after the learning-rate step at round 120, and has been flat there from round 144 to 172. So far large is about equal to medium in the check at 100 simulations, not clearly better.
-- The training ends by itself after round 240 (`ITERATIONS` in `src/train.py`). Then decide about an even bigger network with the remaining compute units.
+- The **large** network (96 channels, 8 blocks, 1.84 million weights) is **finished** (round 240, trained from scratch on Colab, L4).
+- **Result: large is level with medium.** Snapshot test of round 240 against medium round 240: 52.3% at 500 simulations, 50.0% at 2000 (256 games each, each uncertain by about 2 points). In the check during training (100 simulations) the last six checks average 54.8%.
+- **Decision: no bigger network for now.** 2.75 times the weights and twice the simulations in training gave almost nothing, so size is not the limit. Next: the two training tests on Colab (more games, more simulations), see "Tests for how to continue".
 
 ## The plan (settings in `src/train.py`)
 
@@ -99,12 +99,24 @@ from both sides; each number is uncertain by about 2 points):
 | 80 | 40.6% | 29-150-77 | 41.4% | 31-150-75 |
 | 120 | 37.7% | 23-147-86 | 39.1% | 22-156-78 |
 | 160 | 48.4% | 44-160-52 | 48.0% | 32-182-42 |
+| 200 | 52.1% | 51-165-40 | 52.0% | 39-188-29 |
+| 240 | 52.3% | 45-178-33 | 50.0% | 32-192-32 |
 
 Reading (15 November): with more thinking time large looks a little weaker against medium than in the
 check at 100 simulations (round 160: 48% here, about 52% there), so longer search does not favour the
 bigger network. Rounds 80 and 120 are equal within the noise, round 160 shows the gain from the
 learning-rate step at 120. At round 160 large is level with medium, not ahead. In all eight matchups
 large scored 7 to 15 points more when it moved first than when it moved second.
+
+Final reading (15 November, large finished): rounds 200 and 240 are equal within the noise, so the last
+learning-rate step (round 190) and 40 more rounds added nothing measurable here. Large ends level with
+medium: about 52% at 500 simulations, 50% at 2000. Ties grow with the rounds and with thinking time
+(192 of 256 at 2000 simulations). Large round 240 scored about 57% moving first and 43 to 48% moving second.
+
+Checks during training (100 simulations, 256 games each), averaged: rounds 80 to 120 46.2%, 124 to 160
+51.1%, 164 to 188 52.3%, 192 to 216 53.2%, 220 to 240 54.8% (each average uncertain by about 1.2 points).
+So the check kept creeping up by about 1 point per 25 rounds, while the snapshot test with more thinking
+time stayed flat. The check at 100 simulations overstates large by about 2 to 4 points.
 
 Medium for reference: levelled off from about round 140; round 240 scored about 55% against round 132.
 Against minimax (round 132): 2000 simulations gave 96/88/88/76% against depth 12/13/14/15; 4000 added nothing.
@@ -158,7 +170,7 @@ The main line of the search grows by about 2 to 3 moves per doubling of the simu
 
 ## Plan for what comes next
 
-### 1. Finish the large network (now)
+### 1. Finish the large network (done, 15 November 2026)
 
 - Let it run to round 240 even if it passes 50% against medium early. How far above medium it ends decides the next step.
 - Done at round 116: the checks were flat, the learning-rate step at round 120 stays.
@@ -172,6 +184,9 @@ The main line of the search grows by about 2 to 3 moves per doubling of the simu
 - The check during training uses only 100 simulations; the snapshot test is the firmer measure.
 
 ### 3. Decide about a bigger network
+
+Decided 15 November 2026: large ended at 50 to 52% against medium, the row "little gain from size". No
+bigger network; the training tests below come first. Still open from step 2: large against minimax on the laptop.
 
 | Final result of large against medium (500 and 2000 simulations) | Meaning | What to do |
 |---|---|---|
@@ -190,10 +205,10 @@ The main line of the search grows by about 2 to 3 moves per doubling of the simu
 - **Compare with large's log** at the same rounds while the settings are the same; if the bigger network is not ahead of large by about round 40 to 60, stop and save the units.
 - **Playing speed on the laptop:** the bigger network needs about twice the time per move of large.
 
-### Tests for how to continue (15 November 2026; step 1 is built and tried on the laptop, nothing has run on Colab yet)
+### Tests for how to continue (15 November 2026; step 0 is done, step 1 is built, pushed and ready to run on Colab)
 
-0. **Baseline:** snapshot test of large rounds 200 and 240 against medium (500 and 2000 simulations). Copy
-   `alphazero_large.pt` and `alphazero_large_buffer.npz` from Drive to the laptop.
+0. **Baseline (done):** snapshot test of large rounds 200 and 240 against medium: 52.1/52.0% and 52.3/50.0%.
+   Still to copy from Drive to the laptop: `alphazero_large.pt` and `alphazero_large_buffer.npz` (needed for step 2).
 1. **Training tests on Colab,** each continuing large from round 240 in its own Drive folder
    (`Super-TikTakToe-models/experiments/<name>`), checks with 512 games. Settings: `EXPERIMENTS` in `src/train.py`.
    - `more_games` (`colab_experiment_more_games.ipynb`): 1024 games per round, every position used 2 times;
@@ -246,9 +261,9 @@ results in `models/alphazero_medium_vs_utttai.csv`.
 | 500 | this project's search | 47.0% (+-2.3) | 54-114-68 |
 | 500 | its own settings (exploration 2.0, untried move counts as even, prior at least 1%) | 51.5% (+-2.2) | 59-125-52 |
 | 2000 | its own settings | 57.8% (+-2.0) | 65-143-28 |
-| 2000 | this project's search | 53.9% (+-3.5) after 64 of 236 games, still running | 13-43-8 |
+| 2000 | this project's search | 50.6% (+-2.0) | 47-145-44 |
 
-Reading: medium is level with uttt.ai at 500 simulations and ahead at 2000. Their network is about 2.2 times slower per position
+Reading: with the same search for both, the two networks are level (47.0% and 50.6%). Their network plays worse with its own search settings than with this project's (medium gets 51.5% and 57.8% then), so this project's search settings are the better ones, clearly so at 2000 simulations. By who moved first, over all games: at 500 simulations X won 30%, O 19%, ties 51%; at 2000 simulations X 23%, O 16%, ties 61%. Their network is about 2.2 times slower per position
 than medium on the Mac (about as slow as large), so equal simulations favours them in time. In 55% of the
 opening pairs exactly one of the two games was decided, so most results come from mistakes in play, not from the opening.
 
