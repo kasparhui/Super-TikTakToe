@@ -84,6 +84,13 @@ and the lead gets smaller the longer both learn. No test so far shows a higher f
    (`FAST_LINES = False` in `src/Tic_Tac_Toe_NN.py`) until the L4 says otherwise:
    `!python -u src/pretest.py bottleneck large_lines` now shows two more lines in part 3 ("summaries as
    picture operations"). If they beat 6.8 ms, set `FAST_LINES = True`.
+   **Measured on the L4:** picture operations, translated: 6.2 ms per move against 6.7 ms with the tables
+   (8% faster, 23 s of translating once); without translation they are slower (13.2 against 10.5 ms). Too
+   little to close the gap to large's 4.3 ms; `FAST_LINES` stays off for now. Noticed: with them the card is
+   busy only 50% of the time while the network call is 89% of the time, so half of that time is not spent
+   computing on the card. Suspected (not measured): answers that are not a number in half precision are
+   asked again in full precision more often for the line network; that would also explain part 1.
+   The speed test now counts this ("asked again in full precision: ... of ... positions").
    The network class still lives in `src/test_designs.py`.
 2. A direct match `large_lines` against large's round-100 snapshot (both files from Drive) would show
    whether the equal score against medium hides a difference.

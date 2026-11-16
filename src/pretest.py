@@ -230,6 +230,14 @@ class _CardWatch:
         return f', card busy {np.mean(self.busy):.0f}% of the time' if self.busy else ''
 
 
+def _asked_again():
+    """How often an answer in half precision was not a number and the position was asked again in full precision."""
+    asked, again, questions = NN.REPAIRS
+    if not asked:
+        return ''
+    return f' | asked again in full precision: {again:,} of {asked:,} positions, in {questions:,} questions'
+
+
 def bottleneck(variant=None):
     variant = variant or train.MODEL
     device = NN.choose_device(train.DEVICE)
@@ -242,9 +250,10 @@ def bottleneck(variant=None):
     print('The search tree runs on ONE processor core; the network runs on the graphics card.\n')
     print('1. The network alone')
     for batch in BOTTLENECK_PARALLEL_GAMES:
+        NN.REPAIRS[:] = [0, 0, 0]
         with _CardWatch() as watch:
             rate = _network_speed(model, device, batch, half=NN.HALF_PRECISION and device.type == 'cuda')
-        print(f'   {batch} positions at once: {rate:,.0f} positions per second{watch.text()}', flush=True)
+        print(f'   {batch} positions at once: {rate:,.0f} positions per second{watch.text()}{_asked_again()}', flush=True)
     print(f'\n2. Self-play (the first {BOTTLENECK_MOVES} moves of every game)')
     global SPEED_MOVES
     SPEED_MOVES, first = BOTTLENECK_MOVES, None
@@ -271,10 +280,11 @@ def bottleneck(variant=None):
         start = time.perf_counter()
         _search_speed(model, device, best, 20)              # the translation happens here, once
         prepare = time.perf_counter() - start
+        NN.REPAIRS[:] = [0, 0, 0]
         with _CardWatch() as watch:
             per_move, share = _search_speed(model, device, best, simulations)
         print(f'   {name}: {1000 * per_move:.1f} ms per move of a game | network {share:.0%} of the time'
-              f'{watch.text()} | getting ready took {prepare:.0f} s', flush=True)
+              f'{watch.text()} | getting ready took {prepare:.0f} s{_asked_again()}', flush=True)
     NN.FAST_PLAY, NN.COMPILE, NN.FAST_LINES = usual
     NN._fast_copies.clear()
     print('\nSend these lines back. If the processor share is high, spreading the search tree over all '

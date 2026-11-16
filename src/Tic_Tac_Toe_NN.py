@@ -323,11 +323,17 @@ def predict(model, planes, device):
     return logits, values
 
 
+REPAIRS = [0, 0, 0]         # positions asked in half precision, of these asked again, questions with any asked again
+
+
 def _repair(model, x, logits, values):
     """In a rare position a number gets too big for half precision and the answer is not a number.
     Only those positions are asked again, in full precision."""
     broken = ~(np.isfinite(logits).all(axis=1) & np.isfinite(values))
+    REPAIRS[0] += len(values)
     if broken.any():
+        REPAIRS[1] += int(broken.sum())
+        REPAIRS[2] += 1
         with torch.inference_mode():
             again_logits, again_values = model(x[torch.from_numpy(broken).to(x.device)])
         logits[broken] = again_logits.float().cpu().numpy()
