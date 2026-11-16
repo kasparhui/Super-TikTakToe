@@ -62,10 +62,29 @@ and the lead gets smaller the longer both learn. No test so far shows a higher f
    fast as large. The faster network copy now covers the line network (16 November: `folded` and
    `_fast_copy` in `src/Tic_Tac_Toe_NN.py`). Checked on the laptop: same answers (move probabilities differ
    by 0.00002), it follows a change of the weights, and the translation into faster code works on the
-   processor; 6,150 against 4,450 positions per second on the laptop's chip. **Not measured yet: the speed
-   on the L4.** For that, on Colab: `!python -u src/pretest.py bottleneck large_lines` and, to compare,
-   `!python -u src/pretest.py bottleneck large` (a few minutes each; part 3 shows self-play with and without
-   the copy). The network class still lives in `src/test_designs.py`.
+   processor; 6,150 against 4,450 positions per second on the laptop's chip.
+   **Measured on the L4** (`pretest.py bottleneck`, 512 games at once, 400 simulations, ms per move of a game):
+
+   | | as before | rearranged copy | copy, translated |
+   |---|---|---|---|
+   | line network | 12.6 | 10.4 | 6.8 |
+   | large | 7.2 | 5.6 | 4.3 |
+
+   The copy makes the line network's self-play 1.85 times as fast, but large gains 1.67 times too, so the
+   line network stays 1.58 times slower per move (was 1.75). The network is 88% of its time. So per hour the
+   line layers win little or nothing unless the layers themselves get faster (untried: sum along the lines
+   without the big 81 x 72 table multiplications, which fit the card's fast memory layout badly).
+   Part 1 of that test ("network alone") shows the line network 5 times slower than large (20,900 against
+   107,300 positions per second); that does not fit part 3 and is probably caused by the test's random,
+   non-0/1 inputs (guessed: answers that are not a number get asked again in full precision). Not looked into.
+   **Tried against that (16 November, speed on the L4 not measured yet):** the copy can build the summaries
+   with picture operations instead of the tables (`picture_summary` in `src/test_designs.py`; rows and columns
+   by pooling, diagonals with fixed masks). Same answers (differences of 0.000003, also for D8, C2, D5w). On the
+   laptop's chip it is slower (4,000 against 6,200 positions per second), so it is switched off
+   (`FAST_LINES = False` in `src/Tic_Tac_Toe_NN.py`) until the L4 says otherwise:
+   `!python -u src/pretest.py bottleneck large_lines` now shows two more lines in part 3 ("summaries as
+   picture operations"). If they beat 6.8 ms, set `FAST_LINES = True`.
+   The network class still lives in `src/test_designs.py`.
 2. A direct match `large_lines` against large's round-100 snapshot (both files from Drive) would show
    whether the equal score against medium hides a difference.
 3. Continuing the line network past round 100 with 400 simulations (like large) would show whether it

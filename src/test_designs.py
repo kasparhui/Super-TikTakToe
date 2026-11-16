@@ -107,6 +107,11 @@ class Structure(nn.Module):
         super().__init__()
         for name, table in zip(('own_cells', 'target_cells', 'cell_lines', 'board_lines'), _tables()):
             self.register_buffer(name, table, persistent=False)
+        # for the faster way of summing along the lines (Block.picture_summary): where the two diagonals lie
+        diagonal, other = torch.eye(3), torch.eye(3).flip(1)
+        for name, table in (('diagonal', diagonal), ('other_diagonal', other),
+                            ('cell_diagonal', diagonal.repeat(3, 3)), ('cell_other_diagonal', other.repeat(3, 3))):
+            self.register_buffer(name, table.view(1, 1, *table.shape), persistent=False)
 
 
 def to_boards(x):
@@ -170,6 +175,7 @@ class Block(nn.Module):
         super().__init__()
         self.s, self.learned, self.track, self.reverse, self.lines = s, learned, track, reverse, lines
         self.whole = whole
+        self.pictures = False                               # True in the copy for playing: see picture_summary
         line_width = line_width or context                  # numbers that describe one line
         self.conv1 = Filter(channels, channels, inside)
         self.bn1 = nn.BatchNorm2d(channels)
@@ -211,6 +217,8 @@ class Block(nn.Module):
             big = boards
         else:
             big = F.relu(self.context(F.relu(pooled) if self.learned else pooled))
+        if self.pictures:
+            return F.relu(x + self.bn2(self.conv2(h + self.picture_summary(h, big)))), boards
         summary = self.own(big).flatten(2) @ s.own_cells + self.target(big).flatten(2) @ s.target_cells
         if self.lines:
             small = F.relu(self.line_in(h)).flatten(2) @ s.cell_lines               # batch x context x 72 lines
@@ -223,6 +231,44 @@ class Block(nn.Module):
             summary = summary + self.whole_out(F.relu(self.whole_mix(both))).unsqueeze(2)
         h = self.bn2(self.conv2(h + summary.view(x.shape)))
         return F.relu(x + h), boards
+
+
+def _mixed(layer, x):
+    """A layer for rows of numbers (Conv1d with one tap) used on a picture."""
+    return F.conv2d(x, layer.weight.unsqueeze(-1), layer.bias)
+
+
+def _picture_summary(block, h, big):
+    """The same summary as in Block.forward, without the big tables: rows and columns are summed by
+    pooling, the diagonals with fixed masks, and everything stays a picture (batch x numbers x height
+    x width). That fits the fast memory layout of Nvidia cards; the answers are the same."""
+    s = block.s
+    on_boards = block.own(big)
+    if block.lines:
+        rows = F.relu(_mixed(block.big_line_mix, big.sum(dim=3, keepdim=True)))
+        columns = F.relu(_mixed(block.big_line_mix, big.sum(dim=2, keepdim=True)))
+        first = F.relu(_mixed(block.big_line_mix, (big * s.diagonal).sum(dim=(2, 3), keepdim=True)))
+        second = F.relu(_mixed(block.big_line_mix, (big * s.other_diagonal).sum(dim=(2, 3), keepdim=True)))
+        on_boards = on_boards + _mixed(block.big_line_out, rows + columns + first * s.diagonal + second * s.other_diagonal)
+    summary = F.interpolate(on_boards, scale_factor=3) + block.target(big).repeat(1, 1, 3, 3)
+    if block.lines:
+        a = F.relu(block.line_in(h))
+        rows = F.relu(_mixed(block.line_mix, F.avg_pool2d(a, (1, 3)) * 3))
+        columns = F.relu(_mixed(block.line_mix, F.avg_pool2d(a, (3, 1)) * 3))
+        first = F.relu(_mixed(block.line_mix, F.avg_pool2d(a * s.cell_diagonal, 3) * 9))
+        second = F.relu(_mixed(block.line_mix, F.avg_pool2d(a * s.cell_other_diagonal, 3) * 9))
+        on_cells = (F.interpolate(rows, scale_factor=(1, 3)) + F.interpolate(columns, scale_factor=(3, 1))
+                    + F.interpolate(first, scale_factor=3) * s.cell_diagonal
+                    + F.interpolate(second, scale_factor=3) * s.cell_other_diagonal)
+        summary = summary + _mixed(block.line_out, on_cells)
+    if block.whole:
+        all_boards = big.flatten(2)
+        both = torch.cat([all_boards.mean(dim=2), all_boards.amax(dim=2)], dim=1)
+        summary = summary + block.whole_out(F.relu(block.whole_mix(both))).view(-1, summary.shape[1], 1, 1)
+    return summary
+
+
+Block.picture_summary = _picture_summary
 
 
 class DesignNet(nn.Module):

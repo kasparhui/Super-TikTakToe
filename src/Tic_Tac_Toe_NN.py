@@ -49,6 +49,10 @@ HALF_PRECISION = True
 FAST_PLAY = True
 COMPILE = True
 COMPILE_FROM = 256          # smaller questions are not worth translating
+# The copy can sum along the lines with picture operations instead of big tables
+# (test_designs.Block.picture_summary; the same answers). Off until it is measured to be faster on the L4;
+# on Apple's chip it is slower. 'python3 src/pretest.py bottleneck large_lines' compares both.
+FAST_LINES = False
 COMPILE_STEP = 64           # questions are filled up to a multiple of this, so that few sizes occur
 
 # A move is the number  big_field * 9 + little_field  (as in game.Board).
@@ -212,6 +216,8 @@ def folded(model):
     for block in model.blocks:
         block.conv1, block.bn1 = fuse(block.conv1, block.bn1), nn.Identity()
         block.conv2, block.bn2 = fuse(block.conv2, block.bn2), nn.Identity()
+        if hasattr(block, 'pictures'):
+            block.pictures = bool(FAST_LINES)
     model.policy_conv, model.policy_bn = fuse(model.policy_conv, model.policy_bn), nn.Identity()
     model.value_conv, model.value_bn = fuse(model.value_conv, model.value_bn), nn.Identity()
     return model

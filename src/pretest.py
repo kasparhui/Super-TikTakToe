@@ -258,10 +258,15 @@ def bottleneck(variant=None):
               flush=True)
     best = train.PARALLEL_GAMES
     print(f'\n3. Self-play with {best} games at once and the faster ways to ask the network')
-    usual = (NN.FAST_PLAY, NN.COMPILE)
-    for name, fast, translate in (('as before', False, False), ('rearranged copy', True, False),
-                                  ('rearranged copy, translated into faster code', True, True)):
-        NN.FAST_PLAY, NN.COMPILE = fast, translate
+    usual = (NN.FAST_PLAY, NN.COMPILE, NN.FAST_LINES)
+    for name, fast, translate, pictures in (
+            ('as before', False, False, False), ('rearranged copy', True, False, False),
+            ('rearranged copy, translated into faster code', True, True, False),
+            ('rearranged copy, summaries as picture operations', True, False, True),
+            ('rearranged copy, summaries as picture operations, translated', True, True, True)):
+        if pictures and not hasattr(model.blocks[0], 'pictures'):
+            continue                                        # only the networks of test_designs.py have this
+        NN.FAST_PLAY, NN.COMPILE, NN.FAST_LINES = fast, translate, pictures
         NN._fast_copies.clear()
         start = time.perf_counter()
         _search_speed(model, device, best, 20)              # the translation happens here, once
@@ -270,7 +275,7 @@ def bottleneck(variant=None):
             per_move, share = _search_speed(model, device, best, simulations)
         print(f'   {name}: {1000 * per_move:.1f} ms per move of a game | network {share:.0%} of the time'
               f'{watch.text()} | getting ready took {prepare:.0f} s', flush=True)
-    NN.FAST_PLAY, NN.COMPILE = usual
+    NN.FAST_PLAY, NN.COMPILE, NN.FAST_LINES = usual
     NN._fast_copies.clear()
     print('\nSend these lines back. If the processor share is high, spreading the search tree over all '
           'cores helps most;\nif the network share is high, more games at once help.')
