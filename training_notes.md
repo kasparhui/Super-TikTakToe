@@ -205,6 +205,15 @@ Command inside the notebook: `python -u src/train.py run <NETWORK> 100`.
    Estimate (guessed): 280 to 330 s per round, 4.7 to 5.5 hours, 9 to 11 units. From: large took 291 s per
    round over these rounds without the faster copy (7.2 ms per move), the line network with the copy
    measured 6.8 ms per move.
+   Reported from the running Colab session (16 November): 190 to 200 s of self-play per round at first,
+   about 270 s from the 30th round on. Faster than guessed; about 4 to 4.5 hours and 8 to 9 units in all.
+   Why it gets slower is not known. Not longer games: the positions per round stay at about 26,500 to 27,000
+   in every run. The first 100 rounds of the line network showed the same rise (217 s per round in rounds 1
+   to 10, 275 s from round 21) without any half precision, while large with the faster copy stayed flat (82
+   to 88 s). Half precision is still possible as a cause now (the user's idea): the count of 0 positions
+   asked again was taken on an earlier network. From now on the training line shows
+   "asked again in full precision: ... of ... positions" whenever that happens (`src/train.py`; only in runs
+   started after this change, and only syntax-checked, not run).
 4. Lessons about the long game: all three networks run, no clear gain, the owner lesson changes nothing (see the section above).
 5. Still open: 1024 games per round from the start; large against minimax on the laptop; D7 at equal
    thinking time; which layer overflows in half precision (optional).

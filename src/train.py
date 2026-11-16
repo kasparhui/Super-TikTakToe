@@ -646,8 +646,10 @@ def main():
         while iteration < ITERATIONS:
             start = time.perf_counter()
             n_simulations = simulations(iteration)
+            NN.REPAIRS[:] = [0, 0, 0]
             data, stats = self_play(model, device, GAMES_PER_ITERATION, n_simulations)
             play_time = time.perf_counter() - start
+            asked, asked_again = NN.REPAIRS[0], NN.REPAIRS[1]
             good = np.isfinite(data[2]) & np.isfinite(data[1]).all(axis=1)
             if not good.all():      # must never get into the lessons: one such position ruins the network
                 print(f'{int((~good).sum())} positions of this iteration are damaged (not a number) and are left out.')
@@ -680,6 +682,8 @@ def main():
             line = (f"Iteration {iteration}: {stats['games']} games, {stats['positions']} positions "
                     f"in {play_time:.0f}s | policy loss {policy_loss:.3f}, value loss {value_loss:.3f}"
                     f" | learning rate {rate:g}, {n_simulations} simulations")
+            if asked_again:     # half precision failed for these and they cost a second, slower question
+                line += f' | asked again in full precision: {asked_again} of {asked} positions ({asked_again / asked:.1%})'
             if LESSON_LOSSES:
                 line += ' | extra lessons: ' + ', '.join(f'{name} {value:.3f}' for name, value in LESSON_LOSSES.items())
             for depth in EVAL_DEPTHS:
