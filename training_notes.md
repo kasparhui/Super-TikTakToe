@@ -56,6 +56,45 @@ Log: `models/alphazero_large_lines_log.csv`. Checks against medium (256 games, u
 **Read together:** the line layers reach the same quality with about half the lessons, at every size tested,
 and the lead gets smaller the longer both learn. No test so far shows a higher final level.
 
+## Prepared: lessons about the long game (16 November 2026, not run yet)
+
+Why: large and medium ended level, the line network ended level with large, so the limit is probably in the
+lessons and not in the network. Today a position teaches the moves and one mixed number for the outcome.
+
+**The three extra lessons** (outputs next to the two heads; used only while learning, play is unchanged and
+no slower; 3,600 more weights):
+
+| Lesson | What the network has to answer | Where it comes from |
+|---|---|---|
+| `owner` | For every small board that is still open: who holds it at the end, me / the other / nobody | the final board of the game |
+| `outcome` | How the game ends, as three chances: win / tie / loss | the result alone (not mixed with the search value) |
+| `moves` | How good the search found every move it tried | the search tree at the root; a move counts fully from 16 visits |
+
+- The owner is not a plan and is not used to choose moves. It is the chance over the games that follow from
+  this position, exactly like the value. If it depends too much on the opponent's later moves to be worth
+  anything, the test without it shows that (the user's doubt, 16 November).
+- Weights next to policy and value loss (`LESSON_WEIGHTS` in `src/train.py`): owner 0.5, outcome 0.5,
+  moves 1.0. Guessed, not tuned.
+- Code: outputs and `LESSONS` in `src/Tic_Tac_Toe_NN.py`; recording in `self_play`, memory (`EXTRA`) and
+  `lesson_losses` in `src/train.py`; `root_move_values` in `src/MCTS.py`. Self-play always records the
+  lessons; only networks with the outputs learn from them. Old memories load as "not known".
+- Checked on the laptop with a small network: 166,994 owner answers against boards decided later in the same
+  game, none wrong; the result class fits the result; the visit-weighted move values equal the search value
+  (correlation 1.000); the targets turn together with the position; memory save / load / resize keep them;
+  a network without the outputs learns as before; a run that is stopped and continued works.
+
+**The test:** `colab_long_game.ipynb`, one Colab session per network, 100 rounds from scratch with large's
+settings, compared with large's log (14% at round 20, 28% at 40, 35% at 60, 43% at 80, 48% at 100):
+
+| `NETWORK` | What it shows |
+|---|---|
+| `large_long` | all three lessons |
+| `large_long_no_owner` | without the owner: is the owner lesson worth it? |
+| `large_repeat` | large again, nothing changed: how much two equal trainings differ by chance (never measured; large's log is a single run) |
+
+Estimate: 2.5 to 3 hours and 5 to 6 units per network (guessed from large's 3.9 hours and the faster copy).
+Command inside the notebook: `python -u src/train.py run <NETWORK> 100`.
+
 ## What comes after
 
 1. Open decision: is twice the learning speed per game worth it? Only if the line network runs about as
@@ -91,14 +130,18 @@ and the lead gets smaller the longer both learn. No test so far shows a higher f
    computing on the card. Suspected (not measured): answers that are not a number in half precision are
    asked again in full precision more often for the line network; that would also explain part 1.
    The speed test now counts this ("asked again in full precision: ... of ... positions").
+   **Counted on the L4: the suspicion was wrong for real play.** In self-play 0 of 819,200 positions were
+   asked again, in every way of asking. Only part 1 with its random inputs is hit (84% of the positions
+   asked again), so part 1 says nothing about the line network; ignore it. Second measurement of the picture
+   operations, translated: 5.9 ms against 6.6 ms with the tables (first: 6.2 against 6.7), so about 9% faster
+   both times. **Result: the line network is 1.4 to 1.5 times slower than large in self-play (5.9 to 6.6 ms
+   against 4.3 ms per move), and that is the cost of the layers, not a fault.** No further speed work planned.
    The network class still lives in `src/test_designs.py`.
 2. A direct match `large_lines` against large's round-100 snapshot (both files from Drive) would show
    whether the equal score against medium hides a difference.
 3. Continuing the line network past round 100 with 400 simulations (like large) would show whether it
    ends higher than large's 52%. About 9 hours more at today's speed.
-4. Lessons about the long game (needs about 6,000 new games that record more): final owner of each small
-   board, win/tie/loss as three chances, the search's value of every move. The saved value is a mix of result
-   and search value, so these cannot be taken from the old memory.
+4. Lessons about the long game: prepared, see the section above. Run the three networks on Colab.
 5. Still open: 1024 games per round from the start; large against minimax on the laptop; D7 at equal
    thinking time; which layer overflows in half precision (optional).
 

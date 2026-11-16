@@ -68,6 +68,10 @@ BUFFER_SIZE = 300000        # positions kept from earlier iterations (about 11 i
 # Later the network changes slowly, so older games stay good lessons and more are kept.
 # {after this many iterations: positions kept from then on}
 BUFFER_GROWTH = {190: 600000}
+# Extra lessons about the long game, for networks that have the outputs for them ('large_long' in
+# Tic_Tac_Toe_NN.py; see LESSONS there). How much each counts next to the policy and value loss:
+LESSON_WEIGHTS = {'owner': 0.5, 'outcome': 0.5, 'moves': 1.0}
+MOVE_VISITS_FULL = 16       # a move's value counts fully from this many visits of the search, less below
 
 # Warm start: before the first iteration the network learns from games of the
 # minimax AI (your evaluation function), so it does not start from zero.
@@ -111,18 +115,34 @@ EXPERIMENTS = {
 # ------------------------------------------------------------------------
 
 
+# What is saved of every position for the extra lessons: name -> (numbers per position, type, value for "not known")
+EXTRA = {'owner': (9, np.int8, -1),          # per small board: 0 mine, 1 the other's, 2 nobody's at the end; -1 not asked
+         'outcome': (0, np.int8, -1),        # 0 the player to move won, 1 tie, 2 lost
+         'move_value': (81, np.float16, 0),  # the search's value of every move it tried (9x9 picture order)
+         'move_weight': (81, np.uint8, 0)}   # its visits of that move, at most MOVE_VISITS_FULL
+
+
+def _unknown(name, count):
+    size, kind, unknown = EXTRA[name]
+    return np.full((count, size) if size else count, unknown, dtype=kind)
+
+
 class ReplayBuffer:
-    """The most recent training positions: network input, policy target, value target."""
+    """The most recent training positions: network input, policy target, value target, and the
+    targets of the extra lessons (EXTRA)."""
 
     def __init__(self, capacity):
         self.capacity = capacity
         self.planes = np.zeros((capacity, NN.INPUT_PLANES, 9, 9), dtype=np.uint8)
         self.policy = np.zeros((capacity, 81), dtype=np.float16)
         self.value = np.zeros(capacity, dtype=np.float32)
+        self.extra = {name: _unknown(name, capacity) for name in EXTRA}
         self.size = 0
         self.position = 0
 
-    def add(self, planes, policy, value):
+    def add(self, planes, policy, value, *extra):
+        """extra: nothing (positions without the extra lessons), or one array per entry of EXTRA."""
+        extra = dict(zip(EXTRA, extra)) if extra else {name: _unknown(name, len(value)) for name in EXTRA}
         for start in range(0, len(value), self.capacity):
             chunk = slice(start, start + self.capacity)
             n = len(value[chunk])
@@ -130,6 +150,8 @@ class ReplayBuffer:
             self.planes[index] = planes[chunk]
             self.policy[index] = policy[chunk]
             self.value[index] = value[chunk]
+            for name in EXTRA:
+                self.extra[name][index] = extra[name][chunk]
             self.position = (self.position + n) % self.capacity
             self.size = min(self.capacity, self.size + n)
 
@@ -139,43 +161,54 @@ class ReplayBuffer:
         if self.size == self.capacity:      # full: the oldest position is at self.position
             order = (self.position + order) % self.size
         order = order[-capacity:]
-        planes, policy, value = self.planes[order], self.policy[order], self.value[order]
+        kept = [self.planes[order], self.policy[order], self.value[order]] + [self.extra[name][order] for name in EXTRA]
         self.__init__(capacity)
-        self.add(planes, policy, value)
+        self.add(*kept)
 
-    def sample(self, batch_size, device):
+    def sample(self, batch_size, device, lessons=False):
+        """lessons=True: also a dict with the targets of the extra lessons."""
         index = np.random.randint(0, self.size, batch_size)
         planes = torch.from_numpy(self.planes[index]).to(device).float()
         policy = torch.from_numpy(self.policy[index].astype(np.float32)).to(device)
         value = torch.from_numpy(self.value[index]).to(device)
-        return planes, policy, value
+        if not lessons:
+            return planes, policy, value
+        extra = {name: torch.from_numpy(self.extra[name][index].astype(np.float32)).to(device) for name in EXTRA}
+        return planes, policy, value, extra
 
     def save(self, path):
         with open(path + '.tmp', 'wb') as file:
             np.savez(file, planes=self.planes[:self.size], policy=self.policy[:self.size],
-                     value=self.value[:self.size], position=self.position)
+                     value=self.value[:self.size], position=self.position,
+                     **{name: self.extra[name][:self.size] for name in EXTRA})
         os.replace(path + '.tmp', path)
 
     def load(self, path):
-        planes, policy, value, dropped = load_positions(path)
+        planes, policy, value, dropped, extra = load_positions(path, with_extra=True)
         if dropped:
             print(f'{dropped} saved positions were damaged (not a number) and are left out.')
         n = min(len(value), self.capacity)
         self.planes[:n] = planes[-n:]
         self.policy[:n] = policy[-n:]
         self.value[:n] = value[-n:]
+        for name in EXTRA:
+            self.extra[name][:n] = extra[name][-n:]
         self.size = n
         self.position = n % self.capacity
 
 
-def load_positions(path):
-    """The saved positions, oldest first, without damaged ones. Returns (planes, policy, value, number left out)."""
+def load_positions(path, with_extra=False):
+    """The saved positions, oldest first, without damaged ones. Returns (planes, policy, value, number left out);
+    with_extra=True: also a dict with the targets of the extra lessons ("not known" for memories saved without them)."""
     data = np.load(path)
     planes, policy, value = data['planes'], data['policy'], data['value']
     start = int(data['position']) % max(1, len(value))      # in a full memory the oldest position is here
     order = (start + np.arange(len(value))) % max(1, len(value))
     good = order[np.isfinite(value[order]) & np.isfinite(policy[order]).all(axis=1)]
-    return planes[good], policy[good], value[good], len(value) - len(good)
+    result = (planes[good], policy[good], value[good], len(value) - len(good))
+    if with_extra:
+        result += ({name: data[name][good] if name in data.files else _unknown(name, len(good)) for name in EXTRA},)
+    return result
 
 
 # ----------------------------------------------------------------------------
@@ -223,7 +256,8 @@ def minimax_games(n_games):
 
 def self_play(model, device, n_games, n_simulations):
     """The network plays n_games against itself. Returns the training data
-    (planes, policy targets, value targets) and a dict with statistics."""
+    (planes, policy targets, value targets, and the targets of the extra lessons in the order of
+    EXTRA) and a dict with statistics."""
     parallel = min(PARALLEL_GAMES, n_games)
     search = MCTS.BatchedSearch(model, device, parallel, n_simulations,
                                 noise_weight=NOISE_WEIGHT, noise_alpha=NOISE_ALPHA)
@@ -232,11 +266,15 @@ def self_play(model, device, n_games, n_simulations):
     rec_policy = np.zeros((parallel, length, 81), dtype=np.float32)
     rec_q = np.zeros((parallel, length), dtype=np.float32)
     rec_player = np.zeros((parallel, length), dtype=np.int64)
+    rec_move_value = np.zeros((parallel, length, 81), dtype=np.float16)
+    rec_move_weight = np.zeros((parallel, length, 81), dtype=np.uint8)
     moves_played = np.zeros(parallel, dtype=np.int64)
     active = np.ones(parallel, dtype=np.bool_)
     started, finished = parallel, 0
     out_planes, out_policy, out_value = [], [], []
+    out_extra = {name: [] for name in EXTRA}
     results = {1: 0, -1: 0, 0: 0}
+    corner = 3 * np.arange(3)                           # one cell of every small board, to read its state
 
     model.eval()
     while active.any():
@@ -249,6 +287,8 @@ def self_play(model, device, n_games, n_simulations):
         rec_policy[index, step] = policy[:, SPATIAL_TO_MOVE]
         rec_q[index, step] = root_q[index]
         rec_player[index, step] = search.r_player[index]
+        rec_move_value[index, step] = search.root_move_values(active)[index][:, SPATIAL_TO_MOVE]
+        rec_move_weight[index, step] = np.minimum(counts[index], MOVE_VISITS_FULL)[:, SPATIAL_TO_MOVE]
 
         chosen = search.choose_moves(active, moves_played, TEMPERATURE_MOVES)
         movers = search.r_player.copy()
@@ -263,6 +303,17 @@ def self_play(model, device, n_games, n_simulations):
             out_planes.append(rec_planes[g, :n].copy())
             out_policy.append(rec_policy[g, :n].copy())
             out_value.append(((1 - VALUE_MIX) * outcome + VALUE_MIX * rec_q[g, :n]).astype(np.float32))
+            # extra lessons. Who holds each small board now that the game is over (r_won: 1 X, -1 O,
+            # 0 open, 2 tied), seen from the player to move in every position ...
+            final = search.r_won[g] * rec_player[g, :n, None]
+            owner = np.where(final == 1, 0, np.where(final == -1, 1, 2)).astype(np.int8)
+            # ... asked only for the boards that were still open in that position
+            decided = rec_planes[g, :n, 3:6].sum(axis=1)[:, corner][:, :, corner].reshape(n, 9) > 0
+            owner[decided] = -1
+            out_extra['owner'].append(owner)
+            out_extra['outcome'].append((1 - outcome).astype(np.int8))      # 0 won, 1 tie, 2 lost
+            out_extra['move_value'].append(rec_move_value[g, :n].copy())
+            out_extra['move_weight'].append(rec_move_weight[g, :n].copy())
             finished += 1
             moves_played[g] = 0
             if started < n_games:
@@ -271,7 +322,8 @@ def self_play(model, device, n_games, n_simulations):
             else:
                 active[g] = False
 
-    data = (np.concatenate(out_planes), np.concatenate(out_policy), np.concatenate(out_value))
+    data = (np.concatenate(out_planes), np.concatenate(out_policy), np.concatenate(out_value),
+            *(np.concatenate(out_extra[name]) for name in EXTRA))
     stats = {'games': finished, 'positions': len(data[2]), 'x_wins': results[1],
              'o_wins': results[-1], 'ties': results[0]}
     return data, stats
@@ -281,28 +333,63 @@ def self_play(model, device, n_games, n_simulations):
 # learning
 # ----------------------------------------------------------------------------
 
+LESSON_LOSSES = {}          # after train(): the average loss of every extra lesson
+
+
+def lesson_losses(extra, targets):
+    """extra: the network's answers to the extra lessons, targets: what was saved (both already turned)."""
+    losses = {}
+    if 'owner' in extra:        # only small boards that were still open count (the others are -1)
+        target = targets['owner'].long()
+        losses['owner'] = (F.cross_entropy(extra['owner'], target, ignore_index=-1, reduction='sum')
+                           / (target >= 0).sum().clamp(min=1))
+    if 'outcome' in extra:
+        target = targets['outcome'].long()
+        losses['outcome'] = (F.cross_entropy(extra['outcome'], target, ignore_index=-1, reduction='sum')
+                             / (target >= 0).sum().clamp(min=1))
+    if 'moves' in extra:        # only moves the search tried count, fully from MOVE_VISITS_FULL visits
+        weight = targets['move_weight'] / MOVE_VISITS_FULL
+        losses['moves'] = ((extra['moves'] - targets['move_value']) ** 2 * weight).sum() / weight.sum().clamp(min=1)
+    return losses
+
+
 def train(model, optimizer, buffer, device, steps):
-    """Returns the average policy loss and value loss."""
+    """Returns the average policy loss and value loss (the extra lessons: LESSON_LOSSES)."""
     model.train()
-    policy_losses, value_losses = [], []
+    lessons = bool(getattr(model, 'lessons', ()))
+    policy_losses, value_losses, extra_losses = [], [], {}
     for _ in range(steps):
-        planes, policy, value = buffer.sample(BATCH_SIZE, device)
-        planes, policy = NN.random_symmetry(planes, policy)
-        logits, predicted_value = model(planes)
+        if lessons:
+            planes, policy, value, targets = buffer.sample(BATCH_SIZE, device, lessons=True)
+            names = [name for name in targets if targets[name].dim() == 2]     # the result of the game is not turned
+            planes, policy, *turned = NN.random_symmetry(planes, policy, *(targets[name] for name in names))
+            targets.update(zip(names, turned))
+            logits, predicted_value, extra = model(planes, lessons=True)
+        else:
+            planes, policy, value = buffer.sample(BATCH_SIZE, device)
+            planes, policy = NN.random_symmetry(planes, policy)
+            logits, predicted_value = model(planes)
         # only legal moves count (plane 2 marks them)
         logits = logits.masked_fill(planes[:, 2].reshape(-1, 81) == 0, -1e9)
         policy_loss = -(policy * F.log_softmax(logits, dim=1)).sum(dim=1).mean()
         value_loss = F.mse_loss(predicted_value, value)
-        if not bool(torch.isfinite(policy_loss + value_loss)):
+        loss = policy_loss + value_loss
+        if lessons:
+            for name, lesson_loss in lesson_losses(extra, targets).items():
+                loss = loss + LESSON_WEIGHTS[name] * lesson_loss
+                extra_losses.setdefault(name, []).append(lesson_loss.detach())
+        if not bool(torch.isfinite(loss)):
             raise SystemExit('The loss is not a number any more, so the training stops here and this '
                              'iteration is not saved. Start again to continue from the last saved iteration; '
                              'if it happens again, go back to a snapshot: python3 src/train.py restore <iteration>')
         optimizer.zero_grad()
-        (policy_loss + value_loss).backward()
+        loss.backward()
         optimizer.step()
         policy_losses.append(policy_loss.detach())
         value_losses.append(value_loss.detach())
     model.eval()
+    LESSON_LOSSES.clear()
+    LESSON_LOSSES.update({name: float(torch.stack(values).mean()) for name, values in extra_losses.items()})
     return float(torch.stack(policy_losses).mean()), float(torch.stack(value_losses).mean())
 
 
@@ -589,9 +676,12 @@ def main():
                    'policy_loss': round(policy_loss, 4), 'value_loss': round(value_loss, 4),
                    'x_wins': stats['x_wins'], 'o_wins': stats['o_wins'], 'ties': stats['ties'],
                    'learning_rate': rate, 'simulations': n_simulations}
+            row.update({f'{name}_loss': round(value, 4) for name, value in LESSON_LOSSES.items()})
             line = (f"Iteration {iteration}: {stats['games']} games, {stats['positions']} positions "
                     f"in {play_time:.0f}s | policy loss {policy_loss:.3f}, value loss {value_loss:.3f}"
                     f" | learning rate {rate:g}, {n_simulations} simulations")
+            if LESSON_LOSSES:
+                line += ' | extra lessons: ' + ', '.join(f'{name} {value:.3f}' for name, value in LESSON_LOSSES.items())
             for depth in EVAL_DEPTHS:
                 row.update(dict.fromkeys(test_columns(depth), ''))
             if EVAL_EVERY and iteration % EVAL_EVERY == 0:
@@ -716,9 +806,9 @@ def restore(iteration):
     os.replace(checkpoint_file + '.tmp', checkpoint_file)
     print(f"The '{MODEL}' network is back at iteration {iteration}.")
     if os.path.exists(buffer_file):
-        planes, policy, value, dropped = load_positions(buffer_file)
+        planes, policy, value, dropped, extra = load_positions(buffer_file, with_extra=True)
         with open(buffer_file + '.tmp', 'wb') as file:
-            np.savez(file, planes=planes, policy=policy, value=value, position=len(value))
+            np.savez(file, planes=planes, policy=policy, value=value, position=len(value), **extra)
         os.replace(buffer_file + '.tmp', buffer_file)
         print(f'Memory: {dropped} damaged positions taken out, {len(value)} are kept.')
     if os.path.exists(log_file):

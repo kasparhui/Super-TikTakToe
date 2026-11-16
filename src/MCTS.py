@@ -361,6 +361,19 @@ def _root_results(t_visits, t_value, t_move, t_first, t_count, active, counts, r
 
 
 @njit
+def _root_move_values(t_visits, t_value, t_move, t_first, t_count, active, values):
+    """For every move tried at the root: how good the search found it for the player to move."""
+    for g in range(len(active)):
+        values[g, :] = 0.0
+        if not active[g] or t_first[g, 0] < 0:
+            continue
+        first = t_first[g, 0]
+        for child in range(first, first + t_count[g, 0]):
+            if t_visits[g, child] > 0:
+                values[g, t_move[g, child]] = t_value[g, child] / t_visits[g, child]
+
+
+@njit
 def _choose_moves(counts, active, move_number, temperature_moves, chosen):
     """Early in a game moves are drawn in proportion to their visit counts
     (variety), later the most visited move is played."""
@@ -517,6 +530,13 @@ class BatchedSearch:
         _root_results(self.t_visits, self.t_value, self.t_move, self.t_first, self.t_count,
                       active, self.counts, self.root_q)
         return self.counts, self.root_q
+
+    def root_move_values(self, active):
+        """After search(): the search's value of every move it tried (n_games x 81, by move number;
+        0 for moves it did not try). The visit counts say which ones were tried."""
+        values = np.zeros((self.n_games, 81), dtype=np.float32)
+        _root_move_values(self.t_visits, self.t_value, self.t_move, self.t_first, self.t_count, active, values)
+        return values
 
     def choose_moves(self, active, move_number, temperature_moves):
         chosen = np.zeros(self.n_games, dtype=np.int64)

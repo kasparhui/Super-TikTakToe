@@ -30,7 +30,18 @@ MODEL_VARIANTS = {
     'xlarge': {'channels': 128, 'blocks': 10},  # about 2.2 times the work of 'large' per position
     # 'large' with line layers (design D5 of test_designs.py): every cell also hears from the lines it lies on
     'large_lines': {'channels': 96, 'blocks': 8, 'lines': True},
+    # 'large' that also learns lessons about the long game (see LESSONS below). In play it is the same network.
+    'large_long': {'channels': 96, 'blocks': 8, 'lessons': ('owner', 'outcome', 'moves')},
+    'large_long_no_owner': {'channels': 96, 'blocks': 8, 'lessons': ('outcome', 'moves')},
+    # 'large' once more with nothing changed: shows how much two equal trainings differ by chance
+    'large_repeat': {'channels': 96, 'blocks': 8},
 }
+# Extra questions a network can be asked while it learns (never in play):
+#   'owner':   who holds each small board at the end of the game (me / the other / nobody), for the
+#              boards that are still open
+#   'outcome': how the game ends, as three chances (win / tie / loss)
+#   'moves':   how good the search found every move it tried
+LESSONS = ('owner', 'outcome', 'moves')
 DEFAULT_MODEL = 'medium'
 
 INPUT_PLANES = 6
@@ -101,8 +112,9 @@ class BoardBlock(nn.Module):
 
 
 class UltimateTicTacToeNet(nn.Module):
-    def __init__(self, channels=64, blocks=6):
+    def __init__(self, channels=64, blocks=6, lessons=()):
         super().__init__()
+        self.lessons = tuple(lessons)
         self.stem = nn.Conv2d(INPUT_PLANES, channels, 3, padding=1, bias=False)
         # lets the network tell the cells apart (corner of a little board, centre, ...)
         self.position = nn.Parameter(torch.zeros(1, channels, 9, 9))
@@ -117,18 +129,37 @@ class UltimateTicTacToeNet(nn.Module):
         self.value_bn = nn.BatchNorm2d(8)
         self.value_fc1 = nn.Linear(8 * 81, 128)
         self.value_fc2 = nn.Linear(128, 1)
+        # outputs for the extra lessons; they sit next to the two outputs above and are not used in play
+        if 'owner' in self.lessons:
+            self.owner_hidden = nn.Conv2d(channels, 32, 1)
+            self.owner_out = nn.Conv2d(32, 3, 1)
+        if 'outcome' in self.lessons:
+            self.outcome_out = nn.Linear(128, 3)
+        if 'moves' in self.lessons:
+            self.moves_out = nn.Conv2d(32, 1, 1)
 
-    def forward(self, x):
-        """x: batch x 6 x 9 x 9  ->  (policy logits: batch x 81, value: batch)"""
+    def forward(self, x, lessons=False):
+        """x: batch x 6 x 9 x 9  ->  (policy logits: batch x 81, value: batch)
+        lessons=True (only while learning): also a dict with the answers to the extra lessons:
+        'owner' batch x 3 x 9 (me / the other / nobody, per small board), 'outcome' batch x 3
+        (win / tie / loss), 'moves' batch x 81 (value of every move, in the 9x9 picture order)."""
         x = F.relu(self.stem_bn(self.stem(x) + self.position))
         for block in self.blocks:
             x = block(x)
-        policy = F.relu(self.policy_bn(self.policy_conv(x)))
-        policy = self.policy_out(policy).flatten(1)
-        value = F.relu(self.value_bn(self.value_conv(x))).flatten(1)
-        value = F.relu(self.value_fc1(value))
-        value = torch.tanh(self.value_fc2(value)).squeeze(1)
-        return policy, value
+        policy_features = F.relu(self.policy_bn(self.policy_conv(x)))
+        policy = self.policy_out(policy_features).flatten(1)
+        value_features = F.relu(self.value_fc1(F.relu(self.value_bn(self.value_conv(x))).flatten(1)))
+        value = torch.tanh(self.value_fc2(value_features)).squeeze(1)
+        if not lessons:
+            return policy, value
+        extra = {}
+        if 'owner' in self.lessons:
+            extra['owner'] = self.owner_out(F.relu(self.owner_hidden(F.avg_pool2d(x, 3)))).flatten(2)
+        if 'outcome' in self.lessons:
+            extra['outcome'] = self.outcome_out(value_features)
+        if 'moves' in self.lessons:
+            extra['moves'] = torch.tanh(self.moves_out(policy_features)).flatten(1)
+        return policy, value, extra
 
 
 def create_model(variant=DEFAULT_MODEL):
@@ -341,16 +372,25 @@ def _repair(model, x, logits, values):
     return logits, values
 
 
-def random_symmetry(planes, policy):
+def random_symmetry(planes, policy, *others):
     """The same random rotation / mirroring for a batch of positions and their
-    policy targets. The game is symmetric under all 8 of them."""
+    policy targets. The game is symmetric under all 8 of them.
+    others: more targets that are turned along: batch x 81 (one number per cell) or batch x 9
+    (one number per small board). They are returned after planes and policy."""
     turns = int(torch.randint(4, (1,)))
     mirror = bool(torch.randint(2, (1,)))
-    policy = policy.view(-1, 9, 9)
+
+    def turned(target):
+        side = 9 if target.shape[1] == 81 else 3
+        picture = target.view(-1, side, side)
+        if turns:
+            picture = torch.rot90(picture, turns, (1, 2))
+        if mirror:
+            picture = picture.flip(2)
+        return picture.reshape(-1, side * side)
+
     if turns:
         planes = torch.rot90(planes, turns, (2, 3))
-        policy = torch.rot90(policy, turns, (1, 2))
     if mirror:
         planes = planes.flip(3)
-        policy = policy.flip(2)
-    return planes, policy.reshape(-1, 81)
+    return (planes, turned(policy), *(turned(other) for other in others))
