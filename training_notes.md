@@ -192,8 +192,19 @@ Command inside the notebook: `python -u src/train.py run <NETWORK> 100`.
    The network class still lives in `src/test_designs.py`.
 2. A direct match `large_lines` against large's round-100 snapshot (both files from Drive) would show
    whether the equal score against medium hides a difference.
-3. Continuing the line network past round 100 with 400 simulations (like large) would show whether it
-   ends higher than large's 52%. About 9 hours more at today's speed.
+3. **Prepared (16 November, not run yet): the line network from round 100 to 160**, with large's settings
+   (400 simulations from round 101, learning rate 0.0003 from round 121). Notebook `colab_design_lines.ipynb`,
+   command `python -u src/train.py run large_lines 160`; it continues from the files on Drive. No code changed.
+   Why: all comparisons so far ran at the high learning rate, where large went flat too and rose about 5
+   points after the step. So the line network's flat stretch from round 48 may be that ceiling reached early
+   (guessed).
+   Compared with large: 46.7% over rounds 104 to 120, 51.1% over 124 to 160, 54.8% at the end (round 240).
+   Rule set beforehand: about 55% or more over rounds 124 to 160 means the line network is ahead and is run to
+   the end; near 51% means the line layers do not end higher and are dropped. Two equal trainings differ by
+   about 3 points, so only a lead of 4 points or more counts.
+   Estimate (guessed): 280 to 330 s per round, 4.7 to 5.5 hours, 9 to 11 units. From: large took 291 s per
+   round over these rounds without the faster copy (7.2 ms per move), the line network with the copy
+   measured 6.8 ms per move.
 4. Lessons about the long game: all three networks run, no clear gain, the owner lesson changes nothing (see the section above).
 5. Still open: 1024 games per round from the start; large against minimax on the laptop; D7 at equal
    thinking time; which layer overflows in half precision (optional).
