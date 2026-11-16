@@ -56,7 +56,7 @@ Log: `models/alphazero_large_lines_log.csv`. Checks against medium (256 games, u
 **Read together:** the line layers reach the same quality with about half the lessons, at every size tested,
 and the lead gets smaller the longer both learn. No test so far shows a higher final level.
 
-## Prepared: lessons about the long game (16 November 2026, not run yet)
+## Lessons about the long game (prepared and first two runs, 16 November 2026)
 
 Why: large and medium ended level, the line network ended level with large, so the limit is probably in the
 lessons and not in the network. Today a position teaches the moves and one mixed number for the outcome.
@@ -94,6 +94,59 @@ settings, compared with large's log (14% at round 20, 28% at 40, 35% at 60, 43% 
 
 Estimate: 2.5 to 3 hours and 5 to 6 units per network (guessed from large's 3.9 hours and the faster copy).
 Command inside the notebook: `python -u src/train.py run <NETWORK> 100`.
+
+**Measured (16 November, L4, 100 rounds each; logs `models/alphazero_large_long_log.csv` and
+`models/alphazero_large_repeat_log.csv`).** Points against medium, 256 games per check:
+
+| Round | large (older run) | `large_repeat` | `large_long` | line network |
+|---|---|---|---|---|
+| 20 | 13.7% | 12.7% | 14.8% | 18.8% |
+| 40 | 28.5% | 29.5% | 31.4% | 40.0% |
+| 60 | 35.4% | 34.8% | 35.0% | 42.0% |
+| 80 | 42.8% | 36.7% | 38.9% | 47.3% |
+| 100 | 48.4% | 40.8% | 43.8% | 46.7% |
+| mean of all 25 checks | 30.6% | 27.2% | 30.4% | 34.8% |
+| mean of the last 10 checks (rounds 64 to 100) | 44.2% | 39.4% | 42.4% | 45.4% |
+| hours for 100 rounds | 3.93 | 2.53 | 2.60 | 7.92 |
+
+- **Chance between two equal trainings is about 3 points.** `large_repeat` is the same network and settings
+  as large and ends 3.4 points lower on average (below large in 19 of 25 checks, 4.8 points lower over the
+  last 10). Not fully equal: large's run is older and played without the faster network copy. Whether that
+  matters is not known.
+- **The lessons show no gain that stands out from that.** `large_long` is 3.2 points above `large_repeat`
+  on average (ahead in 20 of 25 checks) but 0.2 below the older large run. One run each, so a real gain of
+  0 to 3 points fits the numbers; a clear gain like the line network's early lead (up to 11 points) is not
+  there.
+- What the extra outputs learned (loss at round 1 -> 100): owner 1.025 -> 0.911 (pure guessing is 1.099, so
+  the final owner of a board is hardly predictable, which fits the user's doubt); result as three chances
+  1.028 -> 0.764; move values 0.012 -> 0.022 (flat from round 10).
+- Value loss at round 100: `large_long` 0.110, `large_repeat` 0.110, large 0.121. Policy loss 1.333, 1.338,
+  1.293. The lessons do not change either.
+- Time: the lessons cost about 3% (2.60 against 2.53 hours). Both runs took about 5 units. The faster copy
+  makes large's 100 rounds 1.55 times as fast as the older run (2.53 against 3.93 hours).
+**Third run, `large_long_no_owner` (16 November, L4, 100 rounds, 2.61 hours, about 5 units; log
+`models/alphazero_large_long_no_owner_log.csv`):**
+
+| | large (older run) | `large_repeat` | `large_long` | `large_long_no_owner` |
+|---|---|---|---|---|
+| Round 20 | 13.7% | 12.7% | 14.8% | 14.6% |
+| Round 40 | 28.5% | 29.5% | 31.4% | 30.9% |
+| Round 60 | 35.4% | 34.8% | 35.0% | 40.8% |
+| Round 80 | 42.8% | 36.7% | 38.9% | 41.2% |
+| Round 100 | 48.4% | 40.8% | 43.8% | 42.6% |
+| mean of all 25 checks | 30.6% | 27.2% | 30.4% | 30.0% |
+| mean of the last 10 checks | 44.2% | 39.4% | 42.4% | 42.0% |
+
+- **The owner lesson neither helps nor hurts.** Without it the run is 0.3 points below `large_long` on
+  average (ahead in 10 of 25 checks), far inside the 3 points of chance. It can be dropped.
+- **Both lesson runs sit about 3 points above `large_repeat`** (+3.2 and +2.8 on average, ahead in 20 and 21
+  of 25 checks) and level with the older large run (-0.2 and -0.6). So the lessons are worth 0 to 3 points
+  against medium at 100 rounds; which end of that is true depends on whether `large_repeat` or the older
+  large run is the typical one, and that needs more equal runs to tell.
+- Without the owner, the result as three chances is learned slightly slower (0.774 against 0.764 at round
+  100), the move values the same (0.022). Value loss 0.114, policy loss 1.326 at round 100.
+- **Decision:** the lessons are not a step forward that is worth building on by itself. Not taken into the
+  main training for now.
 
 ## What comes after
 
@@ -141,7 +194,7 @@ Command inside the notebook: `python -u src/train.py run <NETWORK> 100`.
    whether the equal score against medium hides a difference.
 3. Continuing the line network past round 100 with 400 simulations (like large) would show whether it
    ends higher than large's 52%. About 9 hours more at today's speed.
-4. Lessons about the long game: prepared, see the section above. Run the three networks on Colab.
+4. Lessons about the long game: all three networks run, no clear gain, the owner lesson changes nothing (see the section above).
 5. Still open: 1024 games per round from the start; large against minimax on the laptop; D7 at equal
    thinking time; which layer overflows in half precision (optional).
 
