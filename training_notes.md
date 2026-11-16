@@ -205,15 +205,13 @@ Command inside the notebook: `python -u src/train.py run <NETWORK> 100`.
    Estimate (guessed): 280 to 330 s per round, 4.7 to 5.5 hours, 9 to 11 units. From: large took 291 s per
    round over these rounds without the faster copy (7.2 ms per move), the line network with the copy
    measured 6.8 ms per move.
-   Reported from the running Colab session (16 November): 190 to 200 s of self-play per round at first,
-   about 270 s from the 30th round on. Faster than guessed; about 4 to 4.5 hours and 8 to 9 units in all.
-   Why it gets slower is not known. Not longer games: the positions per round stay at about 26,500 to 27,000
-   in every run. The first 100 rounds of the line network showed the same rise (217 s per round in rounds 1
-   to 10, 275 s from round 21) without any half precision, while large with the faster copy stayed flat (82
-   to 88 s). Half precision is still possible as a cause now (the user's idea): the count of 0 positions
-   asked again was taken on an earlier network. From now on the training line shows
-   "asked again in full precision: ... of ... positions" whenever that happens (`src/train.py`; only in runs
-   started after this change, and only syntax-checked, not run).
+   The first 100 rounds got slower on the way (the user's observation: 190 to 200 s of self-play per round at
+   first, about 270 s from round 30; the log shows 217 s per round in rounds 1 to 10 and 275 s from round 21).
+   Why is not known. Not longer games: the positions per round stay at about 26,500 to 27,000 in every run.
+   Not half precision either: that run did not use it. Large with the faster copy stayed flat (82 to 88 s).
+   Whether half precision costs time in the continuation is open: the count of 0 positions asked again was
+   taken on an earlier network. The training line now shows "asked again in full precision: ... of ...
+   positions" whenever that happens (`src/train.py`; only syntax-checked, not run).
 4. Lessons about the long game: all three networks run, no clear gain, the owner lesson changes nothing (see the section above).
 5. Still open: 1024 games per round from the start; large against minimax on the laptop; D7 at equal
    thinking time; which layer overflows in half precision (optional).
@@ -357,6 +355,14 @@ networks in `models/pretest/` (not in git).
 - **What limits self-play on the L4:** the network on the card takes 89% of the time, the search tree 11%.
   512 games at once is fastest (13.0 / 7.0 / 7.8 / 10.7 ms per move of a game at 256 / 512 / 1024 / 2048);
   bigger groups are slower per position, cause unknown. GPU and system memory are barely used.
+  **With the faster copy (large, L4, 16 November): 6.9 / 4.3 / 4.5 / 5.5 ms** at 256 / 512 / 1024 / 2048, so
+  more games at once still do not help; 512 stays. The network alone gives 107,000 positions per second at
+  512 and 1024 and 85,000 at 2048. Noticed: in self-play the network call is 81% of the time while the card
+  is busy only 60% of the time, so part of the call is not the card computing (copying, converting; guessed).
+  To see it: `python -u src/pretest.py card large` now has a part 1b that splits one question of the faster
+  copy into: to the card, made ready, network, back (cell at the end of `colab_pretest.ipynb`; tried on the
+  laptop's processor, not run on the L4 yet). If the network part is most of it, only a different engine
+  (TensorRT) could help; if copying is a big part, that can be cut in our own code.
 - **Faster network copy** (`FAST_PLAY`, `COMPILE` in `src/Tic_Tac_Toe_NN.py`): on Nvidia cards the search asks
   a rearranged copy (normalisation worked into the filters, other memory layout, half precision, translated
   with `torch.compile`). It is renewed when the weights change, checked against the real network after every

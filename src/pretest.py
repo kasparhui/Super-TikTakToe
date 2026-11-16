@@ -363,6 +363,44 @@ def card(variant=None):
               f'question as the search asks it {whole:.2f} = {1000 * batch / whole:,.0f} positions per second'
               + (f' | {broken} positions needed full precision' if broken else ''), flush=True)
 
+    fast = None
+    if NN.FAST_PLAY == 'always' or (NN.FAST_PLAY and NN.HALF_PRECISION and device.type == 'cuda'):
+        fast = NN._fast_copy(model)
+    if fast is not None:
+        print('\n1b. The same for the faster copy that self-play asks (milliseconds)')
+        for batch, planes in positions.items():
+            for _ in range(3):
+                NN.predict(model, planes, device)       # checks the copy and translates it for this size
+            translated = fast.compile and batch >= NN.COMPILE_FROM
+            if fast.broken:
+                print('   the faster copy is switched off here')
+                break
+            net = fast._translated() if translated else fast.net
+            parts = np.zeros(5)
+            with torch.inference_mode():
+                for _ in range(20):
+                    _wait(device)
+                    t0 = time.perf_counter()
+                    on_card = torch.from_numpy(planes).to(device)
+                    _wait(device)
+                    t1 = time.perf_counter()
+                    ready = on_card.half().contiguous(memory_format=torch.channels_last)
+                    _wait(device)
+                    t2 = time.perf_counter()
+                    logits, values = net(ready)
+                    _wait(device)
+                    t3 = time.perf_counter()
+                    logits, values = logits.float().cpu().numpy(), values.float().cpu().numpy()
+                    t4 = time.perf_counter()
+                    NN.predict(model, planes, device)
+                    parts += (t1 - t0, t2 - t1, t3 - t2, t4 - t3, time.perf_counter() - t4)
+            to_card, ready_time, network, back, whole = 1000 * parts / 20
+            print(f'   {batch} positions: to the card {to_card:.2f}, made ready {ready_time:.2f}, network {network:.2f}, '
+                  f'back {back:.2f} | the whole question as the search asks it {whole:.2f} = '
+                  f'{1000 * batch / whole:,.0f} positions per second'
+                  + ('' if translated else ' (not translated)'), flush=True)
+        print('   One move of a game in self-play costs about as many questions as it has simulations.')
+
     x = {batch: torch.from_numpy(planes).to(device) for batch, planes in positions.items()}
     legal = x[CARD_BATCHES[0]][:, 2].reshape(-1, 81) > 0
 
@@ -370,7 +408,7 @@ def card(variant=None):
         return torch.softmax(logits.float().masked_fill(~legal, -1e9), dim=1)
 
     reference = moves(_ask(model, x[CARD_BATCHES[0]], 'full')[0])
-    fast = torch.backends.cudnn
+    library = torch.backends.cudnn
 
     def layout(net):
         return copy.deepcopy(net).to(memory_format=torch.channels_last)
@@ -388,7 +426,7 @@ def card(variant=None):
     print(f'\n2. The network alone on the card, positions per second at {", ".join(map(str, CARD_BATCHES))} at once '
           '(every "+" line is "as now" with that one thing added)')
     for name, build, precision, tuned in ways:
-        fast.benchmark = tuned
+        library.benchmark = tuned
         try:
             net = build()
             rates = [_card_speed(net, x[batch], precision) for batch in CARD_BATCHES]
@@ -400,7 +438,7 @@ def card(variant=None):
         except Exception as error:
             line = f'did not work here: {type(error).__name__}: {str(error)[:120]}'
         print(f'   {name}: {line}', flush=True)
-    fast.benchmark = False
+    library.benchmark = False
     print('\nSend these lines back.')
 
 
