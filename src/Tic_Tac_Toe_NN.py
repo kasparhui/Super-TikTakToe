@@ -200,11 +200,20 @@ def folded(model):
     import copy
     from torch.nn.utils.fusion import fuse_conv_bn_eval
     model = copy.deepcopy(model).eval()
+
+    def fuse(conv, bn):
+        if hasattr(conv, 'conv'):                   # test_designs.Filter: a filter in a wrapper
+            if not conv.inside:
+                return fuse_conv_bn_eval(conv.conv, bn)
+            conv.conv = fuse_conv_bn_eval(conv.conv, bn)
+            return conv
+        return fuse_conv_bn_eval(conv, bn)
+
     for block in model.blocks:
-        block.conv1, block.bn1 = fuse_conv_bn_eval(block.conv1, block.bn1), nn.Identity()
-        block.conv2, block.bn2 = fuse_conv_bn_eval(block.conv2, block.bn2), nn.Identity()
-    model.policy_conv, model.policy_bn = fuse_conv_bn_eval(model.policy_conv, model.policy_bn), nn.Identity()
-    model.value_conv, model.value_bn = fuse_conv_bn_eval(model.value_conv, model.value_bn), nn.Identity()
+        block.conv1, block.bn1 = fuse(block.conv1, block.bn1), nn.Identity()
+        block.conv2, block.bn2 = fuse(block.conv2, block.bn2), nn.Identity()
+    model.policy_conv, model.policy_bn = fuse(model.policy_conv, model.policy_bn), nn.Identity()
+    model.value_conv, model.value_bn = fuse(model.value_conv, model.value_bn), nn.Identity()
     return model
 
 
@@ -283,7 +292,8 @@ _fast_copies = weakref.WeakKeyDictionary()
 
 
 def _fast_copy(model):
-    if not isinstance(model, UltimateTicTacToeNet) or model.training:
+    # every network built from blocks with the usual two heads (also the line network of test_designs.py)
+    if not (hasattr(model, 'blocks') and hasattr(model, 'value_conv')) or model.training:
         return None
     if model not in _fast_copies:
         _fast_copies[model] = _FastCopy(model)
