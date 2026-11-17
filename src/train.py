@@ -109,6 +109,11 @@ SNAPSHOT_EVERY = 4          # every this many iterations a copy of the network i
 # learning time (without the checks; log column work_seconds) of the iterations after that one reaches the
 # seconds. None = no limit. Used to compare tests at the same computing time.
 TIME_LIMIT = None
+# Keep every game in a compact archive (one file per iteration in models/archive/, about 30 bytes per learned
+# position instead of about 1 KB in the memory): the moves and the result of every game, and for every learned
+# position the visits of the moves the search tried and its value. archive_positions() turns a file back into
+# exactly the lessons of the memory, e.g. to train another network on the same games later.
+ARCHIVE = False
 
 # Tests: a finished training is continued with one thing changed, in a folder of its own
 # (models/experiments/<name>/), so the finished network is not touched.
@@ -308,6 +313,11 @@ def self_play(model, device, n_games, n_simulations):
     rec_move_value = np.zeros((parallel, length, 81), dtype=np.float16)
     rec_move_weight = np.zeros((parallel, length, 81), dtype=np.uint8)
     rec_full = np.ones((parallel, length), dtype=np.bool_)    # False: a fast move, not learned from
+    if ARCHIVE:
+        rec_moves = np.zeros((parallel, length), dtype=np.uint8)            # move = small board * 9 + cell
+        rec_counts = np.zeros((parallel, length, 81), dtype=np.uint16)     # visits by move number
+        archive = {name: [] for name in ('lengths', 'results', 'moves', 'full', 'q',
+                                         'tried_count', 'tried_moves', 'tried_visits')}
     moves_played = np.zeros(parallel, dtype=np.int64)
     active = np.ones(parallel, dtype=np.bool_)
     started, finished = parallel, 0
@@ -335,6 +345,9 @@ def self_play(model, device, n_games, n_simulations):
         rec_full[index, step] = full
 
         chosen = search.choose_moves(active, moves_played, TEMPERATURE_MOVES)
+        if ARCHIVE:
+            rec_moves[index, step] = chosen[index]
+            rec_counts[index, step] = counts[index]
         movers = search.r_player.copy()
         status = search.play(active, chosen)
         moves_played[index] += 1
@@ -359,6 +372,17 @@ def self_play(model, device, n_games, n_simulations):
             out_extra['outcome'].append((1 - outcome).astype(np.int8)[keep])      # 0 won, 1 tie, 2 lost
             out_extra['move_value'].append(rec_move_value[g, :n][keep])
             out_extra['move_weight'].append(rec_move_weight[g, :n][keep])
+            if ARCHIVE:
+                tried = rec_counts[g, :n][keep]
+                rows, moves = np.nonzero(tried)
+                archive['lengths'].append(n)
+                archive['results'].append(int(winner))
+                archive['moves'].append(rec_moves[g, :n].copy())
+                archive['full'].append(keep.copy())
+                archive['q'].append(rec_q[g, :n][keep])
+                archive['tried_count'].append((tried > 0).sum(axis=1).astype(np.uint8))
+                archive['tried_moves'].append(moves.astype(np.uint8))
+                archive['tried_visits'].append(tried[rows, moves])
             finished += 1
             moves_played[g] = 0
             if started < n_games:
@@ -371,6 +395,13 @@ def self_play(model, device, n_games, n_simulations):
             *(np.concatenate(out_extra[name]) for name in EXTRA))
     stats = {'games': finished, 'positions': len(data[2]), 'x_wins': results[1],
              'o_wins': results[-1], 'ties': results[0]}
+    if ARCHIVE:
+        stats['archive'] = {
+            'lengths': np.array(archive['lengths'], dtype=np.int16),
+            'results': np.array(archive['results'], dtype=np.int8),        # 1 X won, -1 O won, 0 tie
+            **{name: np.concatenate(archive[name]) for name in
+               ('moves', 'full', 'q', 'tried_count', 'tried_moves', 'tried_visits')},
+            'simulations': n_simulations, 'value_mix': VALUE_MIX}
     return data, stats
 
 
@@ -589,6 +620,50 @@ def buffer_size(iteration):
     return _scheduled(BUFFER_SIZE, BUFFER_GROWTH, iteration)
 
 
+def archive_path(variant, iteration):
+    return os.path.join(NN.MODEL_DIR, 'archive', f'alphazero_{variant}_games{int(iteration):04d}.npz')
+
+
+def save_archive(archive, iteration):
+    """Writes the games of this iteration (see ARCHIVE) compressed, without ever leaving a half written file."""
+    path = archive_path(MODEL, iteration)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path + '.tmp', 'wb') as file:
+        np.savez_compressed(file, iteration=iteration, **archive)
+    os.replace(path + '.tmp', path)
+
+
+def archive_positions(path):
+    """The lessons of an archive file, exactly as self_play() gave them to the memory:
+    (planes, policy, value). The board pictures are rebuilt by playing the moves again."""
+    data = np.load(path)
+    moves, full, q, mix = data['moves'], data['full'], data['q'], float(data['value_mix'])
+    tried_count, tried_moves, tried_visits = data['tried_count'], data['tried_moves'], data['tried_visits']
+    planes, policy, value = [], [], []
+    first, learned, tried = 0, 0, 0          # where the current game starts in moves, q and the tried moves
+    for length, winner in zip(data['lengths'].astype(int), data['results'].astype(int)):
+        board, players = game.Board(np.zeros((9, 9), dtype=np.int8), playerturn=1), []
+        for step in range(length):
+            if full[first + step]:
+                planes.append(MCTS.encode_board(board).astype(np.uint8))
+                counts = np.zeros(81, dtype=np.float32)
+                count = int(tried_count[learned + len(players)])
+                counts[tried_moves[tried:tried + count]] = tried_visits[tried:tried + count]
+                tried += count
+                policy.append((counts / counts.sum())[SPATIAL_TO_MOVE])
+                players.append(int(board.playerturn))
+            move = int(moves[first + step])
+            board.execute((move // 9, move % 9))
+        outcome = winner * np.array(players, dtype=np.int64)      # the same sum as in self_play()
+        value.append(((1 - mix) * outcome + mix * q[learned:learned + len(players)]).astype(np.float32))
+        learned += len(players)
+        first += length
+    planes = np.array(planes, dtype=np.uint8).reshape(-1, NN.INPUT_PLANES, 9, 9)
+    policy, value = np.array(policy, dtype=np.float32).reshape(-1, 81), np.concatenate(value)
+    good = np.isfinite(value) & np.isfinite(policy).all(axis=1)  # damaged positions never reach the memory either
+    return planes[good], policy[good], value[good]
+
+
 def paths(variant):
     base = NN.checkpoint_path(variant)[:-3]
     return base + '.pt', base + '_buffer.npz', base + '_log.csv'
@@ -741,6 +816,8 @@ def main():
             if SNAPSHOT_EVERY and iteration % SNAPSHOT_EVERY == 0:
                 os.makedirs(os.path.dirname(snapshot_path(MODEL, iteration)), exist_ok=True)
                 shutil.copyfile(checkpoint_file, snapshot_path(MODEL, iteration))
+            if 'archive' in stats:
+                save_archive(stats.pop('archive'), iteration)
             work = time.perf_counter() - start          # self-play and learning, without the checks
             if TIME_LIMIT and iteration > TIME_LIMIT[0]:
                 used += work

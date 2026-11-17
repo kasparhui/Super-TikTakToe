@@ -95,6 +95,15 @@ not too small. The learning-rate steps gave +5 to 6 points each time but less at
   limit and did not go on after a restart; `sims_200` changed the simulations; the match was saved and a second
   call only printed it. Not run on the L4.
 
+**Game archive for the final run (built 17 November, the user's wish to keep the games for later):**
+`ARCHIVE = True` in `src/train.py` writes every iteration's games to `archive/alphazero_<network>_gamesNNNN.npz`
+(in the run's folder): moves and result of every game, and for every learned position the visits of the moves
+the search tried and its value. `archive_positions(path)` plays the moves again and gives back exactly the
+lessons of the memory (board pictures, policy, value). Not kept: the long-game lessons (not used). Checked on the
+laptop: rebuilt lessons identical to the last bit, with and without the trick; 13 to 23 bytes per learned
+position at 40 simulations against 1,067 in the memory (at 400 simulations more moves are tried, guessed 20 to
+30 bytes, so about 0.6 to 1 GB for the final run). Off by default; the final run switches it on.
+
 Not proposed, and why: bigger network (size is not the limit yet); line layers (lost to large, 1.45 times
 slower); medium (2.3 times faster, but less room to grow over a long run; small showed the size cap);
 long-game lessons (no gain); more simulations (no gain); proofs of game ends in the search (traps are rare;
