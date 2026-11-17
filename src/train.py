@@ -625,6 +625,17 @@ def main():
         if with_buffer:
             buffer.save(buffer_file)
 
+    # Colab's stop button can send the stop signal several times. Only the first one stops the training;
+    # the later ones are ignored, so that they cannot break the saving (on 17 November one came too early
+    # for the old way, and the memory of the last rounds was not saved).
+    stopping = []
+
+    def stop(signal_number, frame):
+        if not stopping:
+            stopping.append(True)
+            raise KeyboardInterrupt
+
+    signal.signal(signal.SIGINT, stop)
     try:
         if reference is not None and os.path.exists(log_file):
             repeat_checks(reference, device, log_file, reference_columns)
@@ -712,8 +723,6 @@ def main():
         print(f'\nFinished: iteration {iteration} is reached and everything is saved in {checkpoint_file}. '
               f'For more, raise ITERATIONS in src/train.py.', flush=True)
     except KeyboardInterrupt:
-        # Colab's stop button can send the stop signal several times; a second one must not break the saving
-        signal.signal(signal.SIGINT, signal.SIG_IGN)
         print(f'\nStopped. Saving ... (the network is from iteration {iteration})', flush=True)
         save(with_buffer=True)
         print(f'Saved to {checkpoint_file}. Start the script again to continue.')

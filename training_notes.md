@@ -217,6 +217,11 @@ Command inside the notebook: `python -u src/train.py run <NETWORK> 100`.
    (both round 240), 500 and 2000 simulations, 256 games per pair and setting (`test_tournament.py` with its
    settings given in the last cell of `colab_design_lines.ipynb`; results in
    `alphazero_large_lines_tournament.csv`). Tried on the laptop with medium against small; not run on the L4.
+   Stopped by the user after round 148 (17 November): 57.0% against medium at round 148. A second stop signal
+   came before the saving, so the memory of rounds 146 to 148 was not saved (the network of round 148 was, as
+   after every round). Continuing loses about 80,000 of 300,000 positions in memory; small effect (guessed).
+   Fixed in `src/train.py`: only the first stop signal counts from now on (tested on the laptop with six
+   signals in a row while saving).
    The first 100 rounds got slower on the way (the user's observation: 190 to 200 s of self-play per round at
    first, about 270 s from round 30; the log shows 217 s per round in rounds 1 to 10 and 275 s from round 21).
    Why is not known. Not longer games: the positions per round stay at about 26,500 to 27,000 in every run.
