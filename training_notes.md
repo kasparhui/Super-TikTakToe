@@ -192,7 +192,7 @@ Command inside the notebook: `python -u src/train.py run <NETWORK> 100`.
    The network class still lives in `src/test_designs.py`.
 2. A direct match `large_lines` against large's round-100 snapshot (both files from Drive) would show
    whether the equal score against medium hides a difference.
-3. **Prepared (16 November, not run yet): the line network from round 100 to 160**, with large's settings
+3. **Running (16/17 November): the line network from round 100 to 160**, with large's settings
    (400 simulations from round 101, learning rate 0.0003 from round 121). Notebook `colab_design_lines.ipynb`,
    command `python -u src/train.py run large_lines 160`; it continues from the files on Drive. No code changed.
    Why: all comparisons so far ran at the high learning rate, where large went flat too and rose about 5
@@ -205,6 +205,18 @@ Command inside the notebook: `python -u src/train.py run <NETWORK> 100`.
    Estimate (guessed): 280 to 330 s per round, 4.7 to 5.5 hours, 9 to 11 units. From: large took 291 s per
    round over these rounds without the faster copy (7.2 ms per move), the line network with the copy
    measured 6.8 ms per move.
+   **Interim (17 November, rounds 136 to 144, from the Colab lines):** against medium 55.1% / 55.9% / 59.0% at
+   rounds 136 / 140 / 144, mean 56.6%; large at the same rounds 48.8% / 48.8% / 53.5%, mean 50.4%. So 6 points
+   ahead, and already above large's final 54.8% (round 240). Only 3 checks of 256 games (each about 2 points
+   uncertain), so not settled before round 160. Policy loss 1.18 against large's 1.21, value loss 0.099
+   against 0.106. Round times 236 to 318 s of self-play (about 255 s typical), faster than guessed.
+   Half precision: 183 to 14,650 of about 9.5 million positions asked again per round (0.002% to 0.2%);
+   round 141, the one with 0.2%, took 318 s against 236 to 268 for the others, so the re-asking may cost time
+   when it is frequent (one case, not shown). Not a problem yet; watch whether it grows.
+   Prepared for after round 160: a direct match of the line network against the finished large and medium
+   (both round 240), 500 and 2000 simulations, 256 games per pair and setting (`test_tournament.py` with its
+   settings given in the last cell of `colab_design_lines.ipynb`; results in
+   `alphazero_large_lines_tournament.csv`). Tried on the laptop with medium against small; not run on the L4.
    The first 100 rounds got slower on the way (the user's observation: 190 to 200 s of self-play per round at
    first, about 270 s from round 30; the log shows 217 s per round in rounds 1 to 10 and 275 s from round 21).
    Why is not known. Not longer games: the positions per round stay at about 26,500 to 27,000 in every run.
