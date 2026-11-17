@@ -41,7 +41,7 @@ ITERATIONS_PLANNED = 250            # for the estimate of the whole training
 COLAB_UNITS_PER_HOUR = {'T4': 1.2, 'L4': 1.7, 'A100': 5.4}
 
 # bottleneck
-BOTTLENECK_PARALLEL_GAMES = (256, 512, 1024, 2048)
+BOTTLENECK_PARALLEL_GAMES = (256, 512, 1024, 2048, 4096)   # 4096: about 2.6 GB of search trees at 400 simulations
 BOTTLENECK_MOVES = 3                # every game is played for this many moves
 
 # card

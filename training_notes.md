@@ -322,6 +322,9 @@ tests and play use it without any other change.
   only about 2 times. Not measured on the L4 (12 cores there, probably 6 real ones; gain guessed 2 to 3 times).
 - The speed test (`pretest.py bottleneck <network>`) now shows part 2 with the search tree on 1 core and on all
   cores, for every number of games at once.
+- Also 4096 games at once in the speed test now (the user's idea: with the search tree on all cores, bigger
+  groups for the network may pay off; small alone on the card still got faster from 1024 to 2048 positions
+  at once: 383,000 against 584,000 per second, card busy 51%). Search trees then need about 2.6 GB of memory.
 
 ## Settings of the large run (`src/train.py`)
 
