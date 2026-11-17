@@ -18,6 +18,17 @@ import math
 import numpy as np
 
 from fast_minimax import _encode, _make, njit
+
+try:
+    from numba import get_num_threads, prange, set_num_threads
+except ImportError:     # without numba the games are searched one after the other
+    prange = range
+    get_num_threads = set_num_threads = None
+
+# How many processor cores the search trees use: 'all', or a number (1 = one game after the other, as
+# before 17 November). The trees of the games are independent, so they can be worked on at the same
+# time; the answers are exactly the same (with noise only the random numbers differ).
+SEARCH_THREADS = 'all'
 from Tic_Tac_Toe_NN import INPUT_PLANES, MOVE_TO_SPATIAL, predict
 
 MAX_GAME_LENGTH = 81
@@ -224,6 +235,68 @@ def _backup(t_visits, t_value, g, path, depth, value):
 
 
 @njit
+def _select_one(g, r_x, r_o, r_won, r_val, r_meta, r_player,
+                t_visits, t_value, t_prior, t_move, t_first, t_count,
+                sims_done, simulations, pending, path, path_len,
+                leaf_moves, leaf_count, planes, c_puct, fpu, sx, so, swon, sval, legal):
+    """Game g: walks down its tree to a position the network has not seen yet and prepares it as
+    network input. Finished games reached on the way are scored directly. sx ... legal: scratch space."""
+    pending[g] = False
+    while sims_done[g] < simulations:
+        sx[:] = r_x[g]
+        so[:] = r_o[g]
+        swon[:] = r_won[g]
+        sval[:] = r_val[g]
+        bx, bo, res, nb = r_meta[g, 0], r_meta[g, 1], r_meta[g, 2], r_meta[g, 3]
+        p = r_player[g]
+        node = 0
+        depth = 0
+        status = 0
+        path[g, 0] = 0
+        while t_first[g, node] >= 0:
+            first = t_first[g, node]
+            parent_visits = t_visits[g, node]
+            sqrt_parent = math.sqrt(max(1, parent_visits))
+            # value of this position for the player to move, used for untried moves
+            parent_q = 0.0
+            if parent_visits > 0:
+                parent_q = -t_value[g, node] / parent_visits
+            best = first
+            best_score = -1e30
+            for child in range(first, first + t_count[g, node]):
+                n = t_visits[g, child]
+                if n > 0:
+                    q = t_value[g, child] / n
+                else:
+                    q = parent_q - fpu
+                score = q + c_puct * t_prior[g, child] * sqrt_parent / (1 + n)
+                if score > best_score:
+                    best_score = score
+                    best = child
+            move = int(t_move[g, best])
+            bx, bo, res, nb, status = _make(sx, so, swon, sval, bx, bo, res, move // 9, move % 9, p)
+            p = -p
+            node = best
+            depth += 1
+            path[g, depth] = node
+            if status != 0:
+                break
+        path_len[g] = depth + 1
+        if status != 0:
+            # the game is over here: a win for the player who just moved, or a tie
+            _backup(t_visits, t_value, g, path, depth, 1.0 if status == 1 else 0.0)
+            sims_done[g] += 1
+            continue
+        count = _legal_moves(sx, so, swon, nb, legal)
+        leaf_count[g] = count
+        for k in range(count):
+            leaf_moves[g, k] = legal[k]
+        _encode_planes(sx, so, swon, nb, p, planes[g])
+        pending[g] = True
+        break
+
+
+@njit
 def _select_batch(r_x, r_o, r_won, r_val, r_meta, r_player,
                   t_visits, t_value, t_prior, t_move, t_first, t_count,
                   sims_done, simulations, pending, path, path_len,
@@ -237,59 +310,78 @@ def _select_batch(r_x, r_o, r_won, r_val, r_meta, r_player,
     sval = np.zeros(9, dtype=np.float64)
     legal = np.zeros(81, dtype=np.int64)
     for g in range(len(sims_done)):
-        pending[g] = False
-        while sims_done[g] < simulations:
-            sx[:] = r_x[g]
-            so[:] = r_o[g]
-            swon[:] = r_won[g]
-            sval[:] = r_val[g]
-            bx, bo, res, nb = r_meta[g, 0], r_meta[g, 1], r_meta[g, 2], r_meta[g, 3]
-            p = r_player[g]
-            node = 0
-            depth = 0
-            status = 0
-            path[g, 0] = 0
-            while t_first[g, node] >= 0:
-                first = t_first[g, node]
-                parent_visits = t_visits[g, node]
-                sqrt_parent = math.sqrt(max(1, parent_visits))
-                # value of this position for the player to move, used for untried moves
-                parent_q = 0.0
-                if parent_visits > 0:
-                    parent_q = -t_value[g, node] / parent_visits
-                best = first
-                best_score = -1e30
-                for child in range(first, first + t_count[g, node]):
-                    n = t_visits[g, child]
-                    if n > 0:
-                        q = t_value[g, child] / n
-                    else:
-                        q = parent_q - fpu
-                    score = q + c_puct * t_prior[g, child] * sqrt_parent / (1 + n)
-                    if score > best_score:
-                        best_score = score
-                        best = child
-                move = int(t_move[g, best])
-                bx, bo, res, nb, status = _make(sx, so, swon, sval, bx, bo, res, move // 9, move % 9, p)
-                p = -p
-                node = best
-                depth += 1
-                path[g, depth] = node
-                if status != 0:
-                    break
-            path_len[g] = depth + 1
-            if status != 0:
-                # the game is over here: a win for the player who just moved, or a tie
-                _backup(t_visits, t_value, g, path, depth, 1.0 if status == 1 else 0.0)
-                sims_done[g] += 1
-                continue
-            count = _legal_moves(sx, so, swon, nb, legal)
-            leaf_count[g] = count
+        _select_one(g, r_x, r_o, r_won, r_val, r_meta, r_player,
+                    t_visits, t_value, t_prior, t_move, t_first, t_count,
+                    sims_done, simulations, pending, path, path_len,
+                    leaf_moves, leaf_count, planes, c_puct, fpu, sx, so, swon, sval, legal)
+
+
+@njit(parallel=True)
+def _select_batch_parallel(r_x, r_o, r_won, r_val, r_meta, r_player,
+                           t_visits, t_value, t_prior, t_move, t_first, t_count,
+                           sims_done, simulations, pending, path, path_len,
+                           leaf_moves, leaf_count, planes, c_puct, fpu, masks, values, legal):
+    """_select_batch with the games spread over the processor cores. Every game gets its own rows of
+    scratch space (masks: n_games x 3 x 9, values: n_games x 9, legal: n_games x 81)."""
+    for g in prange(len(sims_done)):
+        _select_one(g, r_x, r_o, r_won, r_val, r_meta, r_player,
+                    t_visits, t_value, t_prior, t_move, t_first, t_count,
+                    sims_done, simulations, pending, path, path_len,
+                    leaf_moves, leaf_count, planes, c_puct, fpu,
+                    masks[g, 0], masks[g, 1], masks[g, 2], values[g], legal[g])
+
+
+@njit
+def _expand_one(g, logits, values, pending, t_visits, t_value, t_prior, t_move, t_first, t_count,
+                t_size, sims_done, path, path_len, leaf_moves, leaf_count, noise_weight, noise_alpha):
+    """Game g: creates the children of its new position (with the policy as prior) and passes the
+    value up the tree."""
+    capacity = t_visits.shape[1]
+    if not pending[g]:
+        return
+    depth = path_len[g] - 1
+    leaf = path[g, depth]
+    count = leaf_count[g]
+    start = t_size[g]
+    if start + count <= capacity:
+        # softmax over the legal moves only
+        top = -1e30
+        for k in range(count):
+            logit = logits[g, MOVE_TO_SPATIAL[leaf_moves[g, k]]]
+            if logit > top:
+                top = logit
+        total = 0.0
+        for k in range(count):
+            child = start + k
+            prior = math.exp(logits[g, MOVE_TO_SPATIAL[leaf_moves[g, k]]] - top)
+            total += prior
+            t_prior[g, child] = prior
+            t_move[g, child] = leaf_moves[g, k]
+            t_visits[g, child] = 0
+            t_value[g, child] = 0.0
+            t_first[g, child] = -1
+            t_count[g, child] = 0
+        for k in range(count):
+            t_prior[g, start + k] /= total
+        if leaf == 0 and noise_weight > 0.0:
+            # random noise on the root moves, so that self-play tries new things
+            noise_total = 0.0
             for k in range(count):
-                leaf_moves[g, k] = legal[k]
-            _encode_planes(sx, so, swon, nb, p, planes[g])
-            pending[g] = True
-            break
+                noise = np.random.gamma(noise_alpha, 1.0) + 1e-12
+                noise_total += noise
+                t_value[g, start + k] = noise      # borrowed as temporary storage
+            for k in range(count):
+                child = start + k
+                t_prior[g, child] = ((1.0 - noise_weight) * t_prior[g, child]
+                                     + noise_weight * t_value[g, child] / noise_total)
+                t_value[g, child] = 0.0
+        t_first[g, leaf] = start
+        t_count[g, leaf] = count
+        t_size[g] = start + count
+    # the network judges for the player to move; the tree wants it for the player who moved before
+    _backup(t_visits, t_value, g, path, depth, -values[g])
+    sims_done[g] += 1
+    pending[g] = False
 
 
 @njit
@@ -298,53 +390,19 @@ def _expand_batch(logits, values, pending, t_visits, t_value, t_prior, t_move, t
                   noise_weight, noise_alpha):
     """Uses the answers of the network: creates the children of every new
     position (with the policy as prior) and passes the value up the tree."""
-    capacity = t_visits.shape[1]
     for g in range(len(pending)):
-        if not pending[g]:
-            continue
-        depth = path_len[g] - 1
-        leaf = path[g, depth]
-        count = leaf_count[g]
-        start = t_size[g]
-        if start + count <= capacity:
-            # softmax over the legal moves only
-            top = -1e30
-            for k in range(count):
-                logit = logits[g, MOVE_TO_SPATIAL[leaf_moves[g, k]]]
-                if logit > top:
-                    top = logit
-            total = 0.0
-            for k in range(count):
-                child = start + k
-                prior = math.exp(logits[g, MOVE_TO_SPATIAL[leaf_moves[g, k]]] - top)
-                total += prior
-                t_prior[g, child] = prior
-                t_move[g, child] = leaf_moves[g, k]
-                t_visits[g, child] = 0
-                t_value[g, child] = 0.0
-                t_first[g, child] = -1
-                t_count[g, child] = 0
-            for k in range(count):
-                t_prior[g, start + k] /= total
-            if leaf == 0 and noise_weight > 0.0:
-                # random noise on the root moves, so that self-play tries new things
-                noise_total = 0.0
-                for k in range(count):
-                    noise = np.random.gamma(noise_alpha, 1.0) + 1e-12
-                    noise_total += noise
-                    t_value[g, start + k] = noise      # borrowed as temporary storage
-                for k in range(count):
-                    child = start + k
-                    t_prior[g, child] = ((1.0 - noise_weight) * t_prior[g, child]
-                                         + noise_weight * t_value[g, child] / noise_total)
-                    t_value[g, child] = 0.0
-            t_first[g, leaf] = start
-            t_count[g, leaf] = count
-            t_size[g] = start + count
-        # the network judges for the player to move; the tree wants it for the player who moved before
-        _backup(t_visits, t_value, g, path, depth, -values[g])
-        sims_done[g] += 1
-        pending[g] = False
+        _expand_one(g, logits, values, pending, t_visits, t_value, t_prior, t_move, t_first, t_count,
+                    t_size, sims_done, path, path_len, leaf_moves, leaf_count, noise_weight, noise_alpha)
+
+
+@njit(parallel=True)
+def _expand_batch_parallel(logits, values, pending, t_visits, t_value, t_prior, t_move, t_first, t_count,
+                           t_size, sims_done, path, path_len, leaf_moves, leaf_count,
+                           noise_weight, noise_alpha):
+    """_expand_batch with the games spread over the processor cores."""
+    for g in prange(len(pending)):
+        _expand_one(g, logits, values, pending, t_visits, t_value, t_prior, t_move, t_first, t_count,
+                    t_size, sims_done, path, path_len, leaf_moves, leaf_count, noise_weight, noise_alpha)
 
 
 @njit
@@ -428,6 +486,21 @@ def _encode_roots(r_x, r_o, r_won, r_meta, r_player, planes):
         _encode_planes(r_x[g], r_o[g], r_won[g], r_meta[g, 3], r_player[g], planes[g])
 
 
+_threads_set = [None]
+
+
+def search_threads():
+    """How many processor cores the search uses now (see SEARCH_THREADS)."""
+    if set_num_threads is None:
+        return 1
+    import numba
+    wanted = numba.config.NUMBA_NUM_THREADS if SEARCH_THREADS == 'all' else max(1, min(int(SEARCH_THREADS), numba.config.NUMBA_NUM_THREADS))
+    if _threads_set[0] != wanted:
+        set_num_threads(wanted)
+        _threads_set[0] = wanted
+    return wanted
+
+
 class BatchedSearch:
     """AlphaZero MCTS for n_games positions at the same time."""
 
@@ -474,6 +547,10 @@ class BatchedSearch:
         self.values = np.zeros(n, dtype=np.float32)
         self.counts = np.zeros((n, 81), dtype=np.float32)
         self.root_q = np.zeros(n, dtype=np.float32)
+        # scratch space of every game, for the search on several processor cores
+        self.s_masks = np.zeros((n, 3, 9), dtype=np.int64)
+        self.s_values = np.zeros((n, 9), dtype=np.float64)
+        self.s_legal = np.zeros((n, 81), dtype=np.int64)
 
     def reset(self, g):
         """Game g starts again from the empty board, X to move."""
@@ -511,11 +588,21 @@ class BatchedSearch:
         self.t_visits[:, 0] = 0
         self.t_value[:, 0] = 0.0
         self.sims_done[:] = np.where(active, 0, self.simulations)
+        threads = search_threads()
+        many = threads > 1 and self.n_games > 1
         while True:
-            _select_batch(self.r_x, self.r_o, self.r_won, self.r_val, self.r_meta, self.r_player,
-                          self.t_visits, self.t_value, self.t_prior, self.t_move, self.t_first, self.t_count,
-                          self.sims_done, self.simulations, self.pending, self.path, self.path_len,
-                          self.leaf_moves, self.leaf_count, self.planes, self.c_puct, self.fpu)
+            if many:
+                _select_batch_parallel(
+                    self.r_x, self.r_o, self.r_won, self.r_val, self.r_meta, self.r_player,
+                    self.t_visits, self.t_value, self.t_prior, self.t_move, self.t_first, self.t_count,
+                    self.sims_done, self.simulations, self.pending, self.path, self.path_len,
+                    self.leaf_moves, self.leaf_count, self.planes, self.c_puct, self.fpu,
+                    self.s_masks, self.s_values, self.s_legal)
+            else:
+                _select_batch(self.r_x, self.r_o, self.r_won, self.r_val, self.r_meta, self.r_player,
+                              self.t_visits, self.t_value, self.t_prior, self.t_move, self.t_first, self.t_count,
+                              self.sims_done, self.simulations, self.pending, self.path, self.path_len,
+                              self.leaf_moves, self.leaf_count, self.planes, self.c_puct, self.fpu)
             waiting = np.flatnonzero(self.pending)
             if len(waiting) == 0:
                 break
@@ -523,10 +610,11 @@ class BatchedSearch:
                 self.logits, self.values = predict(self.model, self.planes, self.device)
             else:
                 self.logits[waiting], self.values[waiting] = predict(self.model, self.planes[waiting], self.device)
-            _expand_batch(self.logits, self.values, self.pending, self.t_visits, self.t_value, self.t_prior,
-                          self.t_move, self.t_first, self.t_count, self.t_size, self.sims_done,
-                          self.path, self.path_len, self.leaf_moves, self.leaf_count,
-                          self.noise_weight, self.noise_alpha)
+            (_expand_batch_parallel if many else _expand_batch)(
+                self.logits, self.values, self.pending, self.t_visits, self.t_value, self.t_prior,
+                self.t_move, self.t_first, self.t_count, self.t_size, self.sims_done,
+                self.path, self.path_len, self.leaf_moves, self.leaf_count,
+                self.noise_weight, self.noise_alpha)
         _root_results(self.t_visits, self.t_value, self.t_move, self.t_first, self.t_count,
                       active, self.counts, self.root_q)
         return self.counts, self.root_q

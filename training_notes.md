@@ -294,6 +294,35 @@ the search tree takes 30 to 42% (one core). So for a small network the processor
 card. At 1024 games at once: medium 4.8, small 2.6 (part 2, without the faster copy's translation). Not
 comparable with large's L4 numbers (4.3); to be measured again on the L4, with large on the same machine.
 
+**Measured on the L4 (17 November, 12 cores, 400 simulations, ms per move of a game, faster copy translated;
+large from 16 November):**
+
+| Games at once | 256 | 512 | 1024 | 2048 | search tree share at the best size |
+|---|---|---|---|---|---|
+| large | 6.9 | 4.3 | 4.5 | 5.5 | 19% (512) |
+| medium | 5.9 | 3.1 | **2.2** | 2.5 | 32% (1024) |
+| small | 5.1 | 2.8 | 2.0 | **1.7** | 60% (2048) |
+
+- At its best size medium is 2.0 times and small 2.5 times as fast as large; not the 3 and 20 times their
+  computing would allow. Small and medium only gain from more games at once (1024 or 2048), unlike large.
+- With small the card is busy only about 20% of the time: the search tree on one core takes 60%, and much
+  of the network's 40% is the processor preparing the questions.
+- Guessed effect of the search tree on all 12 cores (its share shrinking to about an eighth): small at 2048
+  about 0.8 ms (5 times large), medium at 1024 about 1.6 ms (2.7 times large). Full search on only a quarter
+  of the moves (KataGo's trick) could add about 2 times on top.
+
+**Built (17 November): the search tree on all processor cores** (`SEARCH_THREADS = 'all'` in `src/MCTS.py`;
+1 = as before). The walk down the tree and the use of the network's answers now run for many games at the same
+time (`_select_batch_parallel`, `_expand_batch_parallel`; every game has its own scratch space). Training,
+tests and play use it without any other change.
+- Checked on the laptop: one core and all cores give exactly the same visit counts and values (64 games,
+  100 simulations, 6 moves, no noise); with noise it runs; two small training rounds work.
+- Laptop speed of the search tree alone (network replaced by a table, 200 simulations): 2.3 times as fast at
+  1024 games, 3.3 times at 2048 on 10 cores; the walk down the tree gains 3.6 times, the use of the answers
+  only about 2 times. Not measured on the L4 (12 cores there, probably 6 real ones; gain guessed 2 to 3 times).
+- The speed test (`pretest.py bottleneck <network>`) now shows part 2 with the search tree on 1 core and on all
+  cores, for every number of games at once.
+
 ## Settings of the large run (`src/train.py`)
 
 | Round | Time from start | What happens |

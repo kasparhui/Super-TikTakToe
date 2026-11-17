@@ -247,7 +247,7 @@ def bottleneck(variant=None):
     cores = len(os.sched_getaffinity(0)) if hasattr(os, 'sched_getaffinity') else os.cpu_count()
     print(f"What limits self-play? '{variant}' network ({'trained' if trained else 'untrained'}) on "
           f'{machine(device)} ({cores} usable), {simulations} simulations per move')
-    print('The search tree runs on ONE processor core; the network runs on the graphics card.\n')
+    print('The search tree runs on the processor (one core, or all of them since 17 November); the network on the graphics card.\n')
     print('1. The network alone')
     for batch in BOTTLENECK_PARALLEL_GAMES:
         NN.REPAIRS[:] = [0, 0, 0]
@@ -257,14 +257,19 @@ def bottleneck(variant=None):
     print(f'\n2. Self-play (the first {BOTTLENECK_MOVES} moves of every game)')
     global SPEED_MOVES
     SPEED_MOVES, first = BOTTLENECK_MOVES, None
+    usual_threads = MCTS.SEARCH_THREADS
     for parallel in BOTTLENECK_PARALLEL_GAMES:
-        with _CardWatch() as watch:
-            per_move, share = _search_speed(model, device, parallel, simulations)
-        first = first or per_move
-        print(f'   {parallel} games at once: {1000 * per_move:.1f} ms per move of a game '
-              f'({first / per_move:.2f} times the speed of {BOTTLENECK_PARALLEL_GAMES[0]}) | '
-              f'search tree (processor) {1 - share:.0%}, network (card, with copying) {share:.0%}{watch.text()}',
-              flush=True)
+        for threads in (1, 'all'):
+            MCTS.SEARCH_THREADS = threads
+            cores = 'search tree on 1 core' if threads == 1 else f'search tree on {MCTS.search_threads()} cores'
+            with _CardWatch() as watch:
+                per_move, share = _search_speed(model, device, parallel, simulations)
+            first = first or per_move
+            print(f'   {parallel} games at once, {cores}: {1000 * per_move:.1f} ms per move of a game '
+                  f'({first / per_move:.2f} times the speed of {BOTTLENECK_PARALLEL_GAMES[0]} on 1 core) | '
+                  f'search tree (processor) {1 - share:.0%}, network (card, with copying) {share:.0%}{watch.text()}',
+                  flush=True)
+    MCTS.SEARCH_THREADS = usual_threads
     best = train.PARALLEL_GAMES
     print(f'\n3. Self-play with {best} games at once and the faster ways to ask the network')
     usual = (NN.FAST_PLAY, NN.COMPILE, NN.FAST_LINES)
