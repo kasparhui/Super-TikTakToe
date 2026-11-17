@@ -19,6 +19,7 @@ On Google Colab: see colab_train.ipynb.
                                                  changed, in its own folder (see EXPERIMENTS below)
     python3 src/train.py run large_lines 60      trains another network than MODEL with the same
                                                  settings, up to this iteration
+    python3 src/train.py match fast_moves more_games   the newest networks of two tests play each other
 """
 import csv
 import os
@@ -55,6 +56,11 @@ TEMPERATURE_MOVES = 20      # for this many moves a game picks its moves with so
 NOISE_WEIGHT = 0.25         # random noise on the first move of every search (0 = none)
 NOISE_ALPHA = 0.6
 VALUE_MIX = 0.5             # value target: 0 = only who won, 1 = only what the search thought
+# KataGo's trick (more games for the same time): only this share of the moves gets the full search and is
+# learned from; the other moves get FAST_SIMULATIONS, no noise, and only move the game on. 1 = every move full.
+# The choice is made per move for all games of the iteration at once.
+FULL_SEARCH_SHARE = 1.0
+FAST_SIMULATIONS = 100
 
 # Learning
 BATCH_SIZE = 256
@@ -99,6 +105,10 @@ REFERENCE_SIMULATIONS = 100 # search size of both networks in these games
 SAVE_BUFFER_EVERY = 5       # the collected positions are large, so they are saved less often
 SNAPSHOT_EVERY = 4          # every this many iterations a copy of the network is kept in
                             # models/snapshots/, so you can go back to an earlier one (0 = never)
+# Stop by time instead of by iterations: (after iteration, seconds) ends the training once the self-play and
+# learning time (without the checks; log column work_seconds) of the iterations after that one reaches the
+# seconds. None = no limit. Used to compare tests at the same computing time.
+TIME_LIMIT = None
 
 # Tests: a finished training is continued with one thing changed, in a folder of its own
 # (models/experiments/<name>/), so the finished network is not touched.
@@ -111,7 +121,19 @@ EXPERIMENTS = {
     'more_games': {'GAMES_PER_ITERATION': 1024, 'REPLAY_RATIO': 2, 'ITERATIONS': 260, 'REFERENCE_GAMES': 512},
     # twice the simulations per move from iteration 241 on: more accurate lessons
     'more_simulations': {'SIMULATIONS_GROWTH': {100: 400, 240: 800}, 'ITERATIONS': 272, 'REFERENCE_GAMES': 512},
+    # Tests for the final model (17 November): more games for the same computing time. Both are more_games
+    # with one more change, and run for the time more_games' 20 iterations take today (guessed 20 x 280 s).
+    # KataGo's trick: the full search (400) on a quarter of the moves, 100 simulations on the others
+    'fast_moves': {'GAMES_PER_ITERATION': 1024, 'REPLAY_RATIO': 2, 'ITERATIONS': 500, 'REFERENCE_GAMES': 512,
+                   'FULL_SEARCH_SHARE': 0.25, 'FAST_SIMULATIONS': 100, 'TIME_LIMIT': (240, 5600)},
+    # 200 simulations on every move
+    'sims_200': {'GAMES_PER_ITERATION': 1024, 'REPLAY_RATIO': 2, 'ITERATIONS': 500, 'REFERENCE_GAMES': 512,
+                 'SIMULATIONS_GROWTH': {100: 400, 240: 200}, 'TIME_LIMIT': (240, 5600)},
 }
+# Direct match of two tests (python3 src/train.py match <test> <other test>): the newest networks of both,
+# MATCH_OPENINGS openings (those of test_tournament.py) from both sides, without randomness.
+MATCH_OPENINGS = 128
+MATCH_SIMULATIONS = 500
 
 # Networks whose training uses other settings than the ones above; they are used when the network is
 # trained with  python3 src/train.py run <network> <iterations>  (or when it is MODEL).
@@ -285,6 +307,7 @@ def self_play(model, device, n_games, n_simulations):
     rec_player = np.zeros((parallel, length), dtype=np.int64)
     rec_move_value = np.zeros((parallel, length, 81), dtype=np.float16)
     rec_move_weight = np.zeros((parallel, length, 81), dtype=np.uint8)
+    rec_full = np.ones((parallel, length), dtype=np.bool_)    # False: a fast move, not learned from
     moves_played = np.zeros(parallel, dtype=np.int64)
     active = np.ones(parallel, dtype=np.bool_)
     started, finished = parallel, 0
@@ -295,6 +318,9 @@ def self_play(model, device, n_games, n_simulations):
 
     model.eval()
     while active.any():
+        full = FULL_SEARCH_SHARE >= 1 or np.random.random() < FULL_SEARCH_SHARE
+        search.simulations = n_simulations if full else min(FAST_SIMULATIONS, n_simulations)
+        search.noise_weight = NOISE_WEIGHT if full else 0.0
         counts, root_q = search.search(active)
         planes = search.encode_roots()
         index = np.flatnonzero(active)
@@ -306,6 +332,7 @@ def self_play(model, device, n_games, n_simulations):
         rec_player[index, step] = search.r_player[index]
         rec_move_value[index, step] = search.root_move_values(active)[index][:, SPATIAL_TO_MOVE]
         rec_move_weight[index, step] = np.minimum(counts[index], MOVE_VISITS_FULL)[:, SPATIAL_TO_MOVE]
+        rec_full[index, step] = full
 
         chosen = search.choose_moves(active, moves_played, TEMPERATURE_MOVES)
         movers = search.r_player.copy()
@@ -316,10 +343,11 @@ def self_play(model, device, n_games, n_simulations):
             n = moves_played[g]
             winner = movers[g] if status[g] == 1 else 0
             results[int(winner)] += 1
+            keep = rec_full[g, :n]                      # only the positions with the full search are learned from
             outcome = winner * rec_player[g, :n]        # +1 where the player to move won in the end
-            out_planes.append(rec_planes[g, :n].copy())
-            out_policy.append(rec_policy[g, :n].copy())
-            out_value.append(((1 - VALUE_MIX) * outcome + VALUE_MIX * rec_q[g, :n]).astype(np.float32))
+            out_planes.append(rec_planes[g, :n][keep])
+            out_policy.append(rec_policy[g, :n][keep])
+            out_value.append(((1 - VALUE_MIX) * outcome + VALUE_MIX * rec_q[g, :n]).astype(np.float32)[keep])
             # extra lessons. Who holds each small board now that the game is over (r_won: 1 X, -1 O,
             # 0 open, 2 tied), seen from the player to move in every position ...
             final = search.r_won[g] * rec_player[g, :n, None]
@@ -327,10 +355,10 @@ def self_play(model, device, n_games, n_simulations):
             # ... asked only for the boards that were still open in that position
             decided = rec_planes[g, :n, 3:6].sum(axis=1)[:, corner][:, :, corner].reshape(n, 9) > 0
             owner[decided] = -1
-            out_extra['owner'].append(owner)
-            out_extra['outcome'].append((1 - outcome).astype(np.int8))      # 0 won, 1 tie, 2 lost
-            out_extra['move_value'].append(rec_move_value[g, :n].copy())
-            out_extra['move_weight'].append(rec_move_weight[g, :n].copy())
+            out_extra['owner'].append(owner[keep])
+            out_extra['outcome'].append((1 - outcome).astype(np.int8)[keep])      # 0 won, 1 tie, 2 lost
+            out_extra['move_value'].append(rec_move_value[g, :n][keep])
+            out_extra['move_weight'].append(rec_move_weight[g, :n][keep])
             finished += 1
             moves_played[g] = 0
             if started < n_games:
@@ -653,6 +681,18 @@ def main():
             raise KeyboardInterrupt
 
     signal.signal(signal.SIGINT, stop)
+    used = 0.0                          # self-play and learning time counted for TIME_LIMIT
+    if TIME_LIMIT and os.path.exists(log_file):
+        with open(log_file, newline='') as file:
+            used = sum(float(row.get('work_seconds') or 0) for row in csv.DictReader(file)
+                       if int(row['iteration']) > TIME_LIMIT[0])
+
+    def time_over():
+        return bool(TIME_LIMIT) and iteration >= TIME_LIMIT[0] and used >= TIME_LIMIT[1]
+
+    if TIME_LIMIT:
+        print(f'Time limit: {TIME_LIMIT[1] / 3600:.2f} hours of self-play and learning after iteration '
+              f'{TIME_LIMIT[0]}, {used / 3600:.2f} hours used so far.', flush=True)
     try:
         if reference is not None and os.path.exists(log_file):
             repeat_checks(reference, device, log_file, reference_columns)
@@ -671,7 +711,7 @@ def main():
             warm_started = True
             save(with_buffer=True)
 
-        while iteration < ITERATIONS:
+        while iteration < ITERATIONS and not time_over():
             start = time.perf_counter()
             n_simulations = simulations(iteration)
             NN.REPAIRS[:] = [0, 0, 0]
@@ -701,6 +741,9 @@ def main():
             if SNAPSHOT_EVERY and iteration % SNAPSHOT_EVERY == 0:
                 os.makedirs(os.path.dirname(snapshot_path(MODEL, iteration)), exist_ok=True)
                 shutil.copyfile(checkpoint_file, snapshot_path(MODEL, iteration))
+            work = time.perf_counter() - start          # self-play and learning, without the checks
+            if TIME_LIMIT and iteration > TIME_LIMIT[0]:
+                used += work
 
             row = {'iteration': iteration, 'games': total_games, 'positions': stats['positions'],
                    'policy_loss': round(policy_loss, 4), 'value_loss': round(value_loss, 4),
@@ -734,11 +777,19 @@ def main():
                     line += (f" | against '{REFERENCE}', {REFERENCE_GAMES} games in "
                              f'{time.perf_counter() - check_start:.0f}s (wins-ties-losses): '
                              f'{score(*result):.0%} ({result[0]}-{result[1]}-{result[2]})')
+            row['work_seconds'] = round(work)
             row['seconds'] = round(time.perf_counter() - start)
             write_log(log_file, row)
+            if TIME_LIMIT and iteration > TIME_LIMIT[0]:
+                line += f' | time used {used / 3600:.2f} of {TIME_LIMIT[1] / 3600:.2f} hours'
             print(line, flush=True)
-        print(f'\nFinished: iteration {iteration} is reached and everything is saved in {checkpoint_file}. '
-              f'For more, raise ITERATIONS in src/train.py.', flush=True)
+        save(with_buffer=True)
+        if time_over():
+            print(f'\nFinished: the time limit is reached after iteration {iteration}; everything is saved '
+                  f'in {checkpoint_file}.', flush=True)
+        else:
+            print(f'\nFinished: iteration {iteration} is reached and everything is saved in {checkpoint_file}. '
+                  f'For more, raise ITERATIONS in src/train.py.', flush=True)
     except KeyboardInterrupt:
         print(f'\nStopped. Saving ... (the network is from iteration {iteration})', flush=True)
         save(with_buffer=True)
@@ -822,6 +873,67 @@ def experiment_summary():
             print(f'  {label}: {mean:.1%} (+-{error:.1%}, {games} games)')
 
 
+def experiment_match(name, other):
+    """The newest network of the test `name` against the newest one of the test `other` (both in
+    models/experiments/), every opening from both sides, without randomness. Prints the points and,
+    per opening, whether `name` played worse, equal or better (sum of its two games below, at or above 1).
+    The games are saved in models/experiments/<name>/match_<other>.csv; a second call only prints them."""
+    import MCTS
+    import test_networks
+    import test_tournament
+    main_folder = NN.MODEL_DIR
+    folders = {test: os.path.join(main_folder, 'experiments', test) for test in (name, other)}
+    networks = {}
+    for test, folder in folders.items():
+        NN.MODEL_DIR = folder
+        try:
+            if not os.path.exists(NN.checkpoint_path(MODEL)):
+                raise SystemExit(f"The test '{test}' has no network in {folder}.")
+            networks[test] = (NN.saved_iteration(MODEL), folder)
+        finally:
+            NN.MODEL_DIR = main_folder
+    path = os.path.join(folders[name], f'match_{other}.csv')
+    test_tournament.OPENINGS = MATCH_OPENINGS
+    openings = test_tournament.openings()
+    if not os.path.exists(path):
+        device = NN.choose_device(DEVICE)
+        models = {}
+        for test, (_, folder) in networks.items():
+            NN.MODEL_DIR = folder
+            try:
+                models[test] = NN.load_model(MODEL, device)
+            finally:
+                NN.MODEL_DIR = main_folder
+        games = [(opening, side) for opening in openings for side in (1, -1)]
+        print(f"'{name}' (iteration {networks[name][0]}) against '{other}' (iteration {networks[other][0]}): "
+              f'{len(games)} games, {MATCH_SIMULATIONS} simulations per move ...', flush=True)
+        start = time.perf_counter()
+        search_a = MCTS.BatchedSearch(models[name], device, len(games), MATCH_SIMULATIONS)
+        search_b = MCTS.BatchedSearch(models[other], device, len(games), MATCH_SIMULATIONS)
+        results = test_networks.play_batch(search_a, search_b, games)
+        with open(path + '.tmp', 'w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow(['a', 'b', 'simulations', 'a_plays', 'result', 'moves', 'opening'])
+            writer.writerows([f'{name} {networks[name][0]}', f'{other} {networks[other][0]}', MATCH_SIMULATIONS,
+                              'X' if side == 1 else 'O', result, moves, test_networks.opening_text(opening)]
+                             for (opening, side), (result, moves) in zip(games, results))
+        os.replace(path + '.tmp', path)
+        print(f'Played in {(time.perf_counter() - start) / 60:.1f} minutes, saved to {path}', flush=True)
+    with open(path, newline='') as file:
+        rows = list(csv.DictReader(file))
+    count = [sum(row['result'] == r for row in rows) for r in test_networks.RESULTS]
+    pairs = {}
+    for row in rows:
+        pairs.setdefault(row['opening'], {})[row['a_plays']] = {'win': 1.0, 'tie': 0.5, 'loss': 0.0}[row['result']]
+    sums = [sum(sides.values()) for sides in pairs.values() if len(sides) == 2]
+    print(f"\n{rows[0]['a']} against {rows[0]['b']}, {rows[0]['simulations']} simulations: "
+          f'{score(*count):.1%} (wins-ties-losses {count[0]}-{count[1]}-{count[2]})')
+    print(f'Per opening ({len(sums)} different openings, both games together): '
+          f"'{name}' worse on {sum(s < 1 for s in sums)}, equal on {sum(s == 1 for s in sums)}, "
+          f'better on {sum(s > 1 for s in sums)}')
+    print(f"Rule set beforehand: 53% or more means '{name}' is used for the final run.")
+
+
 def restore(iteration):
     """Goes back to the snapshot of this iteration: it becomes the newest network, later rows are
     taken out of the log, and damaged positions are taken out of the memory."""
@@ -865,6 +977,8 @@ if __name__ == '__main__':
         restore(int(sys.argv[2]))
     elif len(sys.argv) == 3 and sys.argv[1] == 'experiment':
         experiment(sys.argv[2])
+    elif len(sys.argv) == 4 and sys.argv[1] == 'match':
+        experiment_match(sys.argv[2], sys.argv[3])
     elif len(sys.argv) == 4 and sys.argv[1] == 'run':
         MODEL, ITERATIONS = sys.argv[2], int(sys.argv[3])
         globals().update(RUN_SETTINGS.get(MODEL, {}))

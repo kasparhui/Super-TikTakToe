@@ -16,8 +16,11 @@ that influences the training changes.
   (46.9% / 47.7%) and cost 1.4 to 1.5 times the time per round. Not stronger; not continued for now.
 - **Lessons about the long game** (owner, result as three chances, move values): 0 to 3 points, inside the
   chance between two equal runs. Not used.
-- **Now running: `small_many`** (small network, 2048 games per round, search on all cores): the bet that
-  many more games of a cheaper network beat a bigger network. See "Current run".
+- **Small network with many games (`small_many`):** about level with large per hour of training, far behind
+  per game, and it levels off lower. Stopped at round 105 by the stop rule. A small network does not beat large.
+- **The one lever that helped is more games**, and only where the network is big enough. Everything else
+  ended at about the same level. Plan: put the remaining compute into large with many more games (see
+  "Proposal for the final model").
 
 ## Plan for the remaining units (the user's plan, 17 November)
 
@@ -49,7 +52,55 @@ Openings worse / equal / better (118 openings; from the saved match files):
 Goal: worse on few openings (large 240 is still worse on about 22). Note that a few openings may favour one
 side so much that "equal" there means both played well (each won once with the first move: 4 at 2000).
 
-## Current run: `small_many` (started 17 November, Colab L4)
+## Proposal for the final model (17 November; tests built, final run not decided yet)
+
+**Reading of all experiments together.** Medium and large ended level at the same games; the line network
+learned faster but ended level and lost to large directly; the lessons gave 0 to 3 points; 800 simulations
+gave nothing; more games per round (fresh data per learning step) gave +2.4 even at the lowest learning rate;
+the small network with many games was capped by its size. So the networks are limited by the number of games
+(about 123,000 for large; AlphaZero chess used 44 million), not by size or design, as long as the network is
+not too small. The learning-rate steps gave +5 to 6 points each time but less at the last step.
+
+**Proposal (about 85 units):**
+1. Tests, about 7 units, two Colab sessions at once, each continuing large from round 240 like `more_games`
+   (1024 games per round, each position used twice) for the same training time as `more_games`' 20 rounds
+   at today's speed (about 1.6 hours), then a direct match against `more_games`' round 260:
+   - `fast_moves`: KataGo's trick, a full search (400) on a quarter of the moves, 100 simulations on the
+     others; only the full ones are learned from. Guessed 2.5 times the games per hour.
+   - `sims_200`: 200 simulations on every move; guessed about 1.7 times the games per hour.
+   - Plus the speed of large with the search on all cores (512 and 1024 games at once).
+   - Rule: a test is used for the final run only if it wins the direct match against `more_games` 260 by
+     53% or more (236 games, 500 simulations); otherwise 400 simulations on every move as in `more_games`.
+2. Final run, about 75 units (about 39 hours): large continued from the best of these networks; 1024 games
+   per round; search on all cores; learning rate 0.0001, 0.00003 for the last 15%; memory 1.5 million
+   positions (the network changes slowly at this rate, so older games stay good lessons; guessed); checks
+   against large 240 (512 games, per-opening worse / equal / better) every 8 rounds; snapshot every 8 rounds.
+   Without the trick about 550,000 games (4.5 times large's run), with it perhaps twice that (guessed).
+3. End, about 3 units: direct matches of the last snapshots and of their average (weight averaging) against
+   large 240 and medium 240 at 500 and 2000 simulations, per-opening counts; the best is the final model.
+
+**Built (17 November, the user said yes):**
+- `FULL_SEARCH_SHARE` and `FAST_SIMULATIONS` in `src/train.py` (KataGo's trick; the choice is made per move for
+  all games of an iteration at once; fast moves have no noise and are not learned from). `TIME_LIMIT` stops a
+  training by computing time (new log column `work_seconds`, self-play and learning without the checks).
+- Tests `fast_moves` and `sims_200` in `EXPERIMENTS`, time limit 5,600 s after iteration 240 (= 20 x 280 s,
+  more_games' 20 iterations at today's speed, guessed; if the true time is lower the tests get a little more).
+- `python3 src/train.py match <test> <other test>`: the newest networks of two tests, 128 openings of
+  test_tournament.py from both sides, 500 simulations, per-opening worse / equal / better; saved in
+  `experiments/<test>/match_<other>.csv`.
+- Notebook `colab_final_tests.ipynb` (one session per test, `TEST` in the first cell); the `fast_moves` session
+  also measures large's speed on 1 core and all cores at 512 and 1024 games at once.
+- Tried on the laptop with a tiny setup (small network, 16 to 32 games): 24% of the moves got the full search,
+  only those positions were kept (201 of about 900); fast moves had no noise; the test stopped at its time
+  limit and did not go on after a restart; `sims_200` changed the simulations; the match was saved and a second
+  call only printed it. Not run on the L4.
+
+Not proposed, and why: bigger network (size is not the limit yet); line layers (lost to large, 1.45 times
+slower); medium (2.3 times faster, but less room to grow over a long run; small showed the size cap);
+long-game lessons (no gain); more simulations (no gain); proofs of game ends in the search (traps are rare;
+moves towards minimax); changes to the randomness of self-play (untested, risky in the final run).
+
+## `small_many` (17 November, Colab L4, stopped at round 105)
 
 - Small size (32 channels, 4 blocks, 0.19M weights) from scratch; 2048 games per round, all at once; search
   tree on all processor cores. Settings in `RUN_SETTINGS` in `src/train.py`; notebook `colab_small_many.ipynb`;
@@ -87,6 +138,19 @@ side so much that "equal" there means both played well (each won once with the f
   rounds 80 to 100 below 48% (large at its round 100: 48.4%): stop, the many games do not beat large. 50% or
   more: run to 150. In between: run to 124 and decide again with the same 50%. Stopping at 100 saves about
   2 hours and 4 units.
+- **Result (round 105, 215,000 games, 3.69 hours of training time):**
+
+  | Round | 64 | 68 | 72 | 76 | 80 | 84 | 88 | 92 | 96 | 100 | 104 |
+  |---|---|---|---|---|---|---|---|---|---|---|---|
+  | `small_many` | 41.4% | 38.3% | 39.6% | 43.0% | 41.4% | 44.5% | 45.3% | 41.2% | 42.6% | 47.1% | 45.1% |
+
+  - Mean of rounds 80 to 100: **43.7%, below the 48% of the rule: stopped.** The learning-rate step at 76 lifted
+    it by about 3 points (40.6% over rounds 64 to 76), less than large's 5.
+  - By hours: large at the same training time (about round 120 at today's speed, guessed) stood at about 47 to
+    49%, so small is level or slightly behind. By games: large reached 53.9% with 123,000 games; small has 43
+    to 47% with 215,000. Value loss about 0.114 at round 104 (large: 0.11 to 0.12 around rounds 100 to 120 at the same
+    simulations), policy loss 1.23 (large 1.25 at round 120).
+  - No direct match played (not needed for the decision; saves about 0.5 units).
 
 ## Settings of the large run (`src/train.py`, the reference for all comparisons)
 
