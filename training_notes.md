@@ -31,8 +31,32 @@ that influences the training changes.
   (large: 48.4% at 51,200, 49.0% at 61,400, 50.8% at 81,900, 54.7% at 96,300, 53.9% at 122,900 = round 240);
   and at the end a direct match against medium and large (last notebook cell,
   `alphazero_small_many_tournament.csv`).
-- Measured: about 60 s per round at 200 simulations, so about 5.7 times large's games per hour.
-  Guessed: 100 to 110 s per round from round 26, about 4.5 hours and 9 units in all.
+- Measured (log `models/alphazero_small_many_log.csv`): 83 s per round at 200 simulations, 139 s at 400
+  (the guess was 100 to 110). Rounds 1 to 60 took 1.92 hours of training time. Guessed for all 150: about
+  5.4 hours, about 11 units.
+- **Interim at round 60 (122,880 games), points against medium:**
+
+  | Round | 12 | 24 | 36 | 44 | 48 | 52 | 56 | 60 |
+  |---|---|---|---|---|---|---|---|---|
+  | hours | 0.29 | 0.55 | 1.00 | 1.31 | 1.46 | 1.61 | 1.77 | 1.92 |
+  | `small_many` | 20.5% | 32.2% | 34.0% | 36.3% | 36.7% | 38.7% | 41.8% | 36.5% |
+  | large at the same games | 35.5% | 47.3% | 53.5% | 50.0% | 52.1% | 53.5% | 53.7% | 53.9% |
+  | `large_repeat` at the same hours | 3.3% | 12.5% | 29.5% | 29.1% | 34.8% | 34.0% | 39.8% | 40.2% |
+
+  - **By games it is far behind:** 13 to 17 points below large at the same number of games. The small network
+    learns much less from each game, as expected.
+  - **By hours it was ahead early and is now level:** 15 to 20 points ahead of `large_repeat` in the first
+    half hour, about 5 points ahead around one hour, level by 1.8 to 1.9 hours (mean of the last 3 checks 39.0%
+    against 38.0%). So far the extra games make up for the smaller network, but no more than that.
+  - Still rising slowly (about 1 point per 4 rounds over rounds 24 to 60). The learning-rate step at round 76 is
+    still to come; it lifted large by about 5 points. Policy loss 1.28 at round 60 (large 1.29 at round 100,
+    same simulations).
+  - To beat large it has to reach about 55% by the end; at today's slope that needs the step to help clearly
+    (guessed).
+- **Stop rule, set at round 60:** decide at round 100 (6 checks after the learning-rate step at 76). Mean of
+  rounds 80 to 100 below 48% (large at its round 100: 48.4%): stop, the many games do not beat large. 50% or
+  more: run to 150. In between: run to 124 and decide again with the same 50%. Stopping at 100 saves about
+  2 hours and 4 units.
 
 ## Settings of the large run (`src/train.py`, the reference for all comparisons)
 
