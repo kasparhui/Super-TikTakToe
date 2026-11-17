@@ -370,11 +370,11 @@ POINTS = {'win': 1.0, 'tie': 0.5, 'loss': 0.0}
 
 
 def result_file():
-    return os.path.join(NN.MODEL_DIR, 'design_tests.csv')
+    return NN.data_path('results', 'design_tests.csv')
 
 
 def match_file():
-    return os.path.join(NN.MODEL_DIR, 'design_matches.csv')
+    return NN.data_path('results', 'design_matches.csv')
 
 
 def network_file(design, seed):

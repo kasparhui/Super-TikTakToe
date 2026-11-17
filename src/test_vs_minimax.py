@@ -6,7 +6,7 @@
     /usr/bin/python3 src/test_vs_minimax.py 0      only draw the chart from the saved games
     /usr/bin/python3 src/test_vs_minimax.py time   measure the real thinking time per move
 
-Every finished game is added to  models/alphazero_<model>_vs_minimax.csv  (one line
+Every finished game is added to  models/results/alphazero_<model>_vs_minimax.csv  (one line
 per game), so several runs add up. The chart is saved next to it as a .png; it is
 redrawn every CHART_EVERY rounds and opened when the run is over.
 
@@ -71,7 +71,7 @@ RESULTS = ('win', 'tie', 'loss')
 
 def result_file(model):
     import Tic_Tac_Toe_NN as NN
-    return os.path.join(NN.MODEL_DIR, f'alphazero_{model}_vs_minimax.csv')
+    return NN.data_path('results', f'alphazero_{model}_vs_minimax.csv')
 
 
 def timing_file(model):

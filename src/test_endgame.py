@@ -19,7 +19,7 @@ Both are checked with the same horizon: CHECK_DEPTH before the move, one less af
 A slower win than the one minimax found can therefore count as a missed win; what
 matters in the end is how these games finished, which the totals show as well.
 
-Every checked move is added to  models/alphazero_<model>_endgame.csv , so several
+Every checked move is added to  models/results/alphazero_<model>_endgame.csv , so several
 runs add up. It does not touch the training log, the network or the snapshots.
 Do not run it while a training or another test is running.
 """
@@ -62,7 +62,7 @@ FIELDS = ['model', 'iteration', 'simulations', 'check_depth', 'opponent', 'game'
 
 def result_file(model):
     import Tic_Tac_Toe_NN as NN
-    return os.path.join(NN.MODEL_DIR, f'alphazero_{model}_endgame.csv')
+    return NN.data_path('results', f'alphazero_{model}_endgame.csv')
 
 
 def _warm_up():

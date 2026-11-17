@@ -200,6 +200,18 @@ def save_checkpoint(path, model, optimizer=None, **extra):
     os.replace(path + '.tmp', path)
 
 
+def data_path(folder, name):
+    """A file of the models folder that belongs in one of its subfolders: 'logs' (training logs) or
+    'results' (matches and tests). Where an older copy of the folder (for example on Google Drive) still has
+    the file directly in the models folder, that one is used, so a run continues in the same file."""
+    path = os.path.join(MODEL_DIR, folder, name)
+    flat = os.path.join(MODEL_DIR, name)
+    if os.path.exists(flat) and not os.path.exists(path):
+        return flat
+    os.makedirs(os.path.dirname(path), exist_ok=True)       # so that every script can write there at once
+    return path
+
+
 def snapshot_path(variant, iteration):
     """The copy of the network that train.py keeps of this training iteration."""
     return os.path.join(MODEL_DIR, 'snapshots', f'alphazero_{variant}_iteration{int(iteration):04d}.pt')

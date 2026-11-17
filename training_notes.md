@@ -95,6 +95,18 @@ not too small. The learning-rate steps gave +5 to 6 points each time but less at
   limit and did not go on after a restart; `sims_200` changed the simulations; the match was saved and a second
   call only printed it. Not run on the L4.
 
+**Speed of large, measured on the L4 (17 November, `fast_moves` session, 400 simulations, faster copy):** 512 games
+at once 4.8 ms per move on 1 core, 3.9 ms on 12 cores; 1024 games at once 4.4 and 3.9 ms. So all cores make large
+1.1 to 1.2 times as fast, 512 and 1024 at once are equal, and the network is 92 to 94% of the time (the card is the
+limit). For the final run: 1024 games at once (no slow tail at the end of a round). `more_games`' round today:
+about 1024 x 52 x 3.9 ms = 210 s of self-play + about 50 s of learning = about 260 s (guessed), so the tests'
+5,600 s are about 21.5 of its rounds instead of 20: the tests get about 7% more time, a small advantage for them.
+
+**First rounds of the tests (L4, round 241, reported by the user):** `fast_moves` 1024 games, 14,565 positions
+learned (27% of the moves), 121 s of self-play; `sims_200` 1024 games, 53,416 positions, 140 s of self-play. So
+about 2.1 times (`fast_moves`) and 1.7 times (`sims_200`) the games per hour of `more_games` (guessed 260 s per
+round today), about as guessed. Expected rounds in the 1.56 hours: about 45 and 36.
+
 **Game archive for the final run (built 17 November, the user's wish to keep the games for later):**
 `ARCHIVE = True` in `src/train.py` writes every iteration's games to `archive/alphazero_<network>_gamesNNNN.npz`
 (in the run's folder): moves and result of every game, and for every learned position the visits of the moves
@@ -121,7 +133,7 @@ moves towards minimax); changes to the randomness of self-play (untested, risky 
   (large: 48.4% at 51,200, 49.0% at 61,400, 50.8% at 81,900, 54.7% at 96,300, 53.9% at 122,900 = round 240);
   and at the end a direct match against medium and large (last notebook cell,
   `alphazero_small_many_tournament.csv`).
-- Measured (log `models/alphazero_small_many_log.csv`): 83 s per round at 200 simulations, 139 s at 400
+- Measured (log `models/logs/alphazero_small_many_log.csv`): 83 s per round at 200 simulations, 139 s at 400
   (the guess was 100 to 110). Rounds 1 to 60 took 1.92 hours of training time. Guessed for all 150: about
   5.4 hours, about 11 units.
 - **Interim at round 60 (122,880 games), points against medium:**
@@ -219,9 +231,9 @@ real. `more_simulations` (800): 52.8%, nothing. Both at the lowest learning rate
 
 - **Medium** levelled off from about round 140. Against minimax (2000 simulations): 96/88/88/76% against
   depth 12/13/14/15; 4000 simulations added nothing.
-  At 2000 simulations against depth 15: 108 wins, 51 ties, 17 losses of 176 (`models/alphazero_medium_vs_minimax.csv`;
+  At 2000 simulations against depth 15: 108 wins, 51 ties, 17 losses of 176 (`models/results/alphazero_medium_vs_minimax.csv`;
   the moves of those games were not saved).
-- **Endgame check** (`src/test_endgame.py`, 12 November; `models/alphazero_medium_endgame.csv`): medium round
+- **Endgame check** (`src/test_endgame.py`, 12 November; `models/results/alphazero_medium_endgame.csv`): medium round
   132 against **itself**, 64 games, 2000 simulations; minimax depth 14 checked 2075 network moves from move 20.
   Missed proven win: 7 of 109 moves where a win was proven (some may only be slower wins). Moved into a proven
   loss when nothing was proven before: 8 of 1880. Games: 48 ties, 16 decisive. So traps are rare
@@ -230,7 +242,7 @@ real. `more_simulations` (800): 52.8%, nothing. Both at the lowest learning rate
 - **Search depth:** the main line grows by 2 to 3 moves per doubling of simulations (12 at 500, 17 at 2000).
 - **Against uttt.ai's network** (236 games, our search for both): 47.0% at 500, 50.6% at 2000, so level.
   Their network is 2.2 times slower per position. (Files local only in `external/`; results in
-  `models/alphazero_medium_vs_utttai.csv`.)
+  `models/results/alphazero_medium_vs_utttai.csv`.)
 
 ### Network designs (`src/test_designs.py`)
 
@@ -276,7 +288,7 @@ every network: the middle game with 3 to 4 boards decided.
 - After the learning-rate step it led in all 9 checks from round 124, by 4.9 points; that met the rule set
   beforehand (55% or more, lead of 4 or more). Rounds 101 to 160: 4.83 hours, 9.4 units. Round 132 is
   missing from the log.
-- **Direct match** (round 160, 256 games per pair, `models/alphazero_large_lines_tournament.csv`):
+- **Direct match** (round 160, 256 games per pair, `models/results/alphazero_large_lines_tournament.csv`):
 
   | | 500 simulations | 2000 simulations |
   |---|---|---|
@@ -352,9 +364,16 @@ search's value of every tried move). Code: `LESSONS` in `src/Tic_Tac_Toe_NN.py`,
   points are from the first-named player's side. Snapshots against medium: `colab_test.ipynb`.
 - **Speed:** `python -u src/pretest.py bottleneck <network>` and `... card <network>`.
 - **Design tests:** `src/test_designs.py` with `speed`, `train`, `match`, `summary`, `night`
-  (`size=large`, `steps=36000`); results `models/design_tests.csv`, `models/design_matches.csv`.
+  (`size=large`, `steps=36000`); results `models/results/design_tests.csv`, `models/results/design_matches.csv`.
 - **Chart of a log:** `/usr/bin/python3 src/plot_log.py <network>`.
-- **Files on Drive** (`Super-TikTakToe-models`): networks, `snapshots/`, logs, memories.
+- **The models folder** (tidied 17 November): networks (`alphazero_<network>.pt`) and memories (`_buffer.npz`)
+  directly in it; training logs in `logs/`; matches and tests in `results/`; plus `snapshots/`, `experiments/`,
+  `archive/`, `pretest/`. `NN.data_path` finds a log or result file also where an older copy of the folder still
+  has it directly in the models folder, and keeps using it there, so the flat Drive folder and runs going on
+  there keep working; new files go into `logs/` and `results/`. Checked on the laptop: every script finds the
+  moved files; a run in a flat folder went on in its flat log; a new run and a test wrote into `logs/`.
+- **Files on Drive** (`Super-TikTakToe-models`): networks, `snapshots/`, logs, memories (still flat; no need to
+  move them).
 - **When a run ends:** Runtime > Disconnect and delete runtime. L4 costs 1.94 units per hour; units are not
   tight (state the cost, don't cut useful tests).
 - **On the laptop** only `/usr/bin/python3` has the packages; long runs with `caffeinate -i`.

@@ -11,7 +11,7 @@ networks in ALSO; with 'all' everyone plays everyone. Every pair plays every
 opening twice, once from each side, both with the same number of simulations per
 move and without randomness. The openings are the same for all pairs.
 
-Every finished game is added to  models/alphazero_<model>_tournament.csv . A run
+Every finished game is added to  models/results/alphazero_<model>_tournament.csv . A run
 only plays what is missing, so it can be stopped (Ctrl+C) and continued, and
 players can be added later: start it again when the training has made new snapshots.
 The chart (.png next to the file) shows the points over the training iterations,
@@ -50,7 +50,7 @@ POINTS = {'win': 1.0, 'tie': 0.5, 'loss': 0.0}
 
 def result_file(model):
     import Tic_Tac_Toe_NN as NN
-    return os.path.join(NN.MODEL_DIR, f'alphazero_{model}_tournament.csv')
+    return NN.data_path('results', f'alphazero_{model}_tournament.csv')
 
 
 def players():

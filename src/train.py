@@ -666,7 +666,7 @@ def archive_positions(path):
 
 def paths(variant):
     base = NN.checkpoint_path(variant)[:-3]
-    return base + '.pt', base + '_buffer.npz', base + '_log.csv'
+    return base + '.pt', base + '_buffer.npz', NN.data_path('logs', f'alphazero_{variant}_log.csv')
 
 
 def snapshot_path(variant, iteration):
@@ -901,8 +901,8 @@ def experiment(name):
                              + ('' if os.path.exists(buffer_file) else ' and has no saved memory') + '.')
         print(f"Setting up the test '{name}' in {folder} ...", flush=True)
         copies = [(snapshot, os.path.basename(checkpoint_file)), (buffer_file, os.path.basename(buffer_file))]
-        if os.path.exists(log_file):
-            copies.append((log_file, os.path.basename(log_file)))
+        if os.path.exists(log_file):        # in the same place inside the test's folder (logs/ or directly)
+            copies.append((log_file, os.path.relpath(log_file, main_folder)))
         if REFERENCE and os.path.exists(NN.checkpoint_path(REFERENCE)):
             copies.append((NN.checkpoint_path(REFERENCE), os.path.basename(NN.checkpoint_path(REFERENCE))))
         for back in range(EXPERIMENT_BASELINE):         # for the baseline with the test's number of games

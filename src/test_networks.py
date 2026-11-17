@@ -14,7 +14,7 @@ all tests use the same starting positions; without that file they are random.
 Two networks without randomness always play the same game from the same opening,
 so every opening is played only once per side.
 
-Every finished game is added to  models/alphazero_<model>_networks.csv . A run
+Every finished game is added to  models/results/alphazero_<model>_networks.csv . A run
 only plays the games that are not in the file yet, so it can be stopped (Ctrl+C)
 and continued; when every opening is played with every search size, it is finished.
 After a run the totals are printed and drawn as a chart (.png next to the file). It does not touch the training log, the network or the snapshots.
@@ -48,7 +48,7 @@ RESULTS = ('win', 'tie', 'loss')
 
 def result_file(model):
     import Tic_Tac_Toe_NN as NN
-    return os.path.join(NN.MODEL_DIR, f'alphazero_{model}_networks.csv')
+    return NN.data_path('results', f'alphazero_{model}_networks.csv')
 
 
 def chart_file(model, a, b):
