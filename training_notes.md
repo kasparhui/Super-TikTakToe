@@ -363,6 +363,21 @@ networks in `models/pretest/` (not in git).
   copy into: to the card, made ready, network, back (cell at the end of `colab_pretest.ipynb`; tried on the
   laptop's processor, not run on the L4 yet). If the network part is most of it, only a different engine
   (TensorRT) could help; if copying is a big part, that can be cut in our own code.
+  **Measured on the L4 (17 November, large, faster copy, ms per question):**
+
+  | Positions at once | to the card | made ready | network | back | whole question | positions per second |
+  |---|---|---|---|---|---|---|
+  | 512 | 0.36 | 0.08 | 3.90 | 0.16 | 4.54 | 112,800 |
+  | 1024 | 0.57 | 0.10 | 8.43 | 0.22 | 9.42 | 108,700 |
+  | 2048 | 0.99 | 0.08 | 21.68 | 0.33 | 23.37 | 87,600 |
+
+  Reading: the network itself is 86% of a question; copying there and back is about 11% (0.5 ms of 4.5).
+  Twice the positions take a little more than twice the time, so at 512 the card is already computing at
+  full speed; the lower "card busy" figure of the speed test comes from the search tree and the copying
+  around it. **So our own code has at most about 10% left to gain** (by cutting the copying), and more games
+  at once cannot help. Only less computing per position helps: a smaller or cheaper network, or a different
+  engine (TensorRT; its gain on this network is a guess, perhaps 1.2 to 1.5 times on the network part).
+  Decision: no further speed work for now.
 - **Faster network copy** (`FAST_PLAY`, `COMPILE` in `src/Tic_Tac_Toe_NN.py`): on Nvidia cards the search asks
   a rearranged copy (normalisation worked into the filters, other memory layout, half precision, translated
   with `torch.compile`). It is renewed when the weights change, checked against the real network after every
