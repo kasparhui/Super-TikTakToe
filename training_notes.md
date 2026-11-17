@@ -14,7 +14,8 @@ that influences the training changes.
 - **The line layers (design D5) are the first change that ends higher.** Up to round 100 they only learned
   faster (both about 47% at round 100). After the learning-rate step they lead large by 4.9 points over
   rounds 124 to 160 (56.0% against 51.1% against medium, ahead in all 9 checks), and at round 160 stand at
-  57.4%, above large's final 54.8%. A round costs 1.4 to 1.5 times as long. Direct match still to come.
+  57.4%, above large's final 54.8%. A round costs 1.4 to 1.5 times as long. **But in a direct match
+  it loses slightly to large** (round 240): 46.9% at 500 and 47.7% at 2000 simulations.
 - **Lessons about the long game** (owner, result as three chances, move values): no clear gain, not used.
 
 ## Results of the night of 15 to 16 November 2026
@@ -242,8 +243,31 @@ Command inside the notebook: `python -u src/train.py run <NETWORK> 100`.
    - Time: rounds 101 to 160 took 4.83 hours (295 s per round on average, 258 to 349 s), about 9.4 units.
    - Reading: the learning-rate step lifted the line network by about 6 points (from about 50% to 56%), as it
      lifted large by about 5. The flat stretch from round 48 was the ceiling of the high learning rate.
-   Next: the direct match against large and medium (prepared, last cell of `colab_design_lines.ipynb`), then
-   decide on running it to round 240 with large's full schedule.
+   **Direct match (17 November, L4, 256 games per pair and setting, no randomness; file
+   `models/alphazero_large_lines_tournament.csv`), points of the line network at round 160:**
+
+   | | 500 simulations | 2000 simulations |
+   |---|---|---|
+   | against large (round 240) | 46.9% +-1.9 (39-162-55) | 47.7% +-1.5 (23-198-35) |
+   | against medium (round 240) | 56.4% +-1.8 (63-163-30) | 51.2% +-1.7 (42-178-36) |
+   | for comparison: large against medium | 52.3% +-1.7 | 50.0% +-1.6 |
+
+   - No bug in the display: the results are from the first-named player's side, and the side check fits
+     (moving first scores more in every pair, as always).
+   - The results do not add up neatly: against medium the line network does 4 points (500) or 1 point
+     (2000) better than large does, but against large itself it loses by 2 to 3 points. Part of that is
+     chance: every number is uncertain by about 2 points, so a gap of 4 to 7 points between such numbers is
+     unusual but possible. Part may be real: a player can be good against one opponent's habits and not
+     against another's (large and medium learned in the same way and play alike; guessed).
+   - Not equal training: the line network has 160 rounds at learning rate 0.0003; large has 240 rounds and
+     the last 50 at 0.0001. Large's snapshot test showed little gain after round 160 (48.4% to 52.3% at 500
+     simulations), so this explains at most part of it (guessed).
+   - At 2000 simulations most games end in ties (198 of 256 against large), so differences get small.
+   - Reading: the line network at round 160 is not stronger than large at round 240 in a direct match; it is
+     about level or slightly weaker. The lead in the training checks against medium was real against medium
+     but does not carry over to large.
+   Next possible step: the line network at round 160 against large's snapshot of round 160 (equal rounds;
+   the snapshot is on Drive), before deciding on running it to round 240.
    The first 100 rounds got slower on the way (the user's observation: 190 to 200 s of self-play per round at
    first, about 270 s from round 30; the log shows 217 s per round in rounds 1 to 10 and 275 s from round 21).
    Why is not known. Not longer games: the positions per round stay at about 26,500 to 27,000 in every run.
