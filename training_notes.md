@@ -279,6 +279,21 @@ Command inside the notebook: `python -u src/train.py run <NETWORK> 100`.
 5. Still open: 1024 games per round from the start; large against minimax on the laptop; D7 at equal
    thinking time; which layer overflows in half precision (optional).
 
+## Smaller network and many more games (idea of 17 November)
+
+The user's remaining hope: a simpler, faster network and many more games. Fits what is measured (medium with
+0.67 million weights is level with large's 1.84 million; more games was the only setting that helped).
+Plan: 1. measure the speed of medium and small; 2. build what that shows is needed (search tree on several
+processor cores, and/or full search on only some moves, as KataGo does); 3. one long run with large's Colab
+time but 5 to 10 times the games (guessed), judged by a direct match against large at round 240.
+
+**First measurement, by mistake on a T4 with 2 processor cores (not the L4), 400 simulations, ms per move of
+a game, faster copy translated, 512 games at once:** medium 5.5, small 3.3. Small needs about a sixth of
+medium's computing but is only 1.7 times as fast: with small the card is busy only about 40% of the time and
+the search tree takes 30 to 42% (one core). So for a small network the processor side is the limit, not the
+card. At 1024 games at once: medium 4.8, small 2.6 (part 2, without the faster copy's translation). Not
+comparable with large's L4 numbers (4.3); to be measured again on the L4, with large on the same machine.
+
 ## Settings of the large run (`src/train.py`)
 
 | Round | Time from start | What happens |
