@@ -11,9 +11,11 @@ that influences the training changes.
   the weights gave almost nothing: size is not the limit. No bigger network for now.
 - **Training settings alone do not fix it.** Continuing large with twice the games per round gave +2.4
   points, with twice the simulations nothing.
-- **The line layers (design D5) learn about twice as fast per game, but so far do not end higher.** In
-  self-play they were up to 11 points ahead of large at the same round, then stopped rising at round 48;
-  at round 100 both stand at about 47%. On Colab a round took twice as long, so per hour nothing was won.
+- **The line layers (design D5) are the first change that ends higher.** Up to round 100 they only learned
+  faster (both about 47% at round 100). After the learning-rate step they lead large by 4.9 points over
+  rounds 124 to 160 (56.0% against 51.1% against medium, ahead in all 9 checks), and at round 160 stand at
+  57.4%, above large's final 54.8%. A round costs 1.4 to 1.5 times as long. Direct match still to come.
+- **Lessons about the long game** (owner, result as three chances, move values): no clear gain, not used.
 
 ## Results of the night of 15 to 16 November 2026
 
@@ -192,7 +194,7 @@ Command inside the notebook: `python -u src/train.py run <NETWORK> 100`.
    The network class still lives in `src/test_designs.py`.
 2. A direct match `large_lines` against large's round-100 snapshot (both files from Drive) would show
    whether the equal score against medium hides a difference.
-3. **Running (16/17 November): the line network from round 100 to 160**, with large's settings
+3. **Done (17 November): the line network from round 100 to 160, it is ahead of large**, with large's settings
    (400 simulations from round 101, learning rate 0.0003 from round 121). Notebook `colab_design_lines.ipynb`,
    command `python -u src/train.py run large_lines 160`; it continues from the files on Drive. No code changed.
    Why: all comparisons so far ran at the high learning rate, where large went flat too and rose about 5
@@ -222,6 +224,26 @@ Command inside the notebook: `python -u src/train.py run <NETWORK> 100`.
    after every round). Continuing loses about 80,000 of 300,000 positions in memory; small effect (guessed).
    Fixed in `src/train.py`: only the first stop signal counts from now on (tested on the laptop with six
    signals in a row while saving).
+   **Result at round 160 (log `models/alphazero_large_lines_log.csv`):**
+
+   | Round | 104 | 112 | 120 | 128 | 136 | 144 | 152 | 160 | mean 124 to 160 |
+   |---|---|---|---|---|---|---|---|---|---|
+   | line network | 48.6% | 48.8% | 52.1% | 53.3% | 55.1% | 59.0% | 55.9% | 57.4% | 56.0% |
+   | large | 49.6% | 46.3% | 49.0% | 49.6% | 48.8% | 53.5% | 52.9% | 50.8% | 51.1% |
+
+   - Ahead of large in all 9 checks from round 124 on, by 4.9 points on average (0.6 to 7.0). That meets the
+     rule set beforehand (about 55% or more, a lead of 4 points or more), though only just on the lead.
+     Large is the higher of the two equal large runs (`large_repeat` was 3.4 points lower), so the comparison
+     is not flattering the line network.
+   - At round 160 it stands at 57.4%, above large's final 54.8% at round 240.
+   - Policy loss 1.166 against large's 1.205 at round 160; value loss 0.101 against 0.105.
+   - Round 132 is missing from the log (the network went on; the line was not written, probably a stop between
+     saving the network and writing the log). So the mean is over 9 checks, not 10.
+   - Time: rounds 101 to 160 took 4.83 hours (295 s per round on average, 258 to 349 s), about 9.4 units.
+   - Reading: the learning-rate step lifted the line network by about 6 points (from about 50% to 56%), as it
+     lifted large by about 5. The flat stretch from round 48 was the ceiling of the high learning rate.
+   Next: the direct match against large and medium (prepared, last cell of `colab_design_lines.ipynb`), then
+   decide on running it to round 240 with large's full schedule.
    The first 100 rounds got slower on the way (the user's observation: 190 to 200 s of self-play per round at
    first, about 270 s from round 30; the log shows 217 s per round in rounds 1 to 10 and 275 s from round 21).
    Why is not known. Not longer games: the positions per round stay at about 26,500 to 27,000 in every run.
