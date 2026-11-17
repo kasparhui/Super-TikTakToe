@@ -112,6 +112,23 @@ EXPERIMENTS = {
     # twice the simulations per move from iteration 241 on: more accurate lessons
     'more_simulations': {'SIMULATIONS_GROWTH': {100: 400, 240: 800}, 'ITERATIONS': 272, 'REFERENCE_GAMES': 512},
 }
+
+# Networks whose training uses other settings than the ones above; they are used when the network is
+# trained with  python3 src/train.py run <network> <iterations>  (or when it is MODEL).
+RUN_SETTINGS = {
+    # small network, many games (17 November): 2048 games per iteration, all played at the same time
+    # (the fastest number for this size on the L4 with the search on all cores). The schedule follows the
+    # number of games of large's run: 400 simulations after about 51,000 games (large: iteration 100),
+    # then the learning rate steps down later than large's (more games per step).
+    'small_many': {
+        'GAMES_PER_ITERATION': 2048, 'PARALLEL_GAMES': 2048,
+        'SIMULATIONS_GROWTH': {25: 400},
+        'LEARNING_RATE_DECAY': {75: 3e-4, 125: 1e-4},
+        'BUFFER_SIZE': 450000,                  # about 4 iterations of positions
+        'BUFFER_GROWTH': {75: 900000},          # about 8 iterations
+        'SAVE_BUFFER_EVERY': 10,                # the memory is large (about 0.8 GB at 900,000 positions)
+    },
+}
 # ------------------------------------------------------------------------
 
 
@@ -850,6 +867,10 @@ if __name__ == '__main__':
         experiment(sys.argv[2])
     elif len(sys.argv) == 4 and sys.argv[1] == 'run':
         MODEL, ITERATIONS = sys.argv[2], int(sys.argv[3])
+        globals().update(RUN_SETTINGS.get(MODEL, {}))
+        if MODEL in RUN_SETTINGS:
+            print(f"Settings of '{MODEL}': " + ', '.join(f'{name} = {value}' for name, value in RUN_SETTINGS[MODEL].items()))
         main()
     else:
+        globals().update(RUN_SETTINGS.get(MODEL, {}))
         main()

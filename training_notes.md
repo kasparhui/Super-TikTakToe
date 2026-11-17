@@ -326,6 +326,40 @@ tests and play use it without any other change.
   groups for the network may pay off; small alone on the card still got faster from 1024 to 2048 positions
   at once: 383,000 against 584,000 per second, card busy 51%). Search trees then need about 2.6 GB of memory.
 
+**Measured on the L4 (17 November), ms per move of a game, 400 simulations, faster copy translated:**
+
+| Games at once | 512 | 1024 | 2048 | 4096 |
+|---|---|---|---|---|
+| medium, 1 core | 3.3 | 2.6 | 2.8 | 3.3 |
+| medium, 12 cores | 2.9 | **1.9** | 2.0 | 2.4 |
+| small, 1 core | 3.0 | 2.2 | 2.0 | 2.2 |
+| small, 12 cores | 2.3 | 1.4 | **0.9** | 1.0 |
+| large, 1 core (16 November) | 4.3 | 4.5 | 5.5 | |
+
+- All cores make small 2.2 times as fast at 2048 games (2.0 to 0.9 ms) and medium 1.4 times at 1024.
+- Against large's 4.3 ms: **small 4.8 times as fast, medium 2.3 times** (at their best group size).
+- 4096 games at once gives nothing more (small 1.0, medium 2.4 ms); the network alone gets slower above
+  2048 positions at once. So 2048 for small, 1024 for medium.
+- With small at 2048, the search tree is 26% of the time and the network call 74%, but the card is busy only
+  40%: the rest of the call is the processor preparing the question (one core). The next possible speed-up
+  is there (guessed: avoiding copies of the positions; not measured).
+- Large on all cores is not measured (its search tree was 19% of the time, so perhaps 15% faster; guessed).
+
+**Prepared (17 November, not run yet): `small_many`**, the size of small (32 channels, 4 blocks, 0.19 million
+weights) from scratch, 2048 games per iteration all at once, the search on all cores (the user's choice instead
+of a capacity test first). Settings in `RUN_SETTINGS` in `src/train.py` (used by
+`python -u src/train.py run small_many 150`), notebook `colab_small_many.ipynb`:
+- Schedule by games, like large: 200 simulations until iteration 25 (51,200 games = large's iteration 100),
+  then 400; learning rate 0.001, 0.0003 from iteration 76, 0.0001 from 126 (all guessed). Memory 450,000
+  positions (about 4 iterations), 900,000 from iteration 76; every position used 4 times as before.
+- 150 iterations = 307,000 games, 2.5 times large's whole run. Check against medium every 4 iterations (256
+  games, 100 simulations) as before; afterwards a direct match against medium and large (last cell).
+- Large against medium at the same number of games: 48.4% at 51,200, 49.0% at 61,400, 50.8% at 81,900, 54.7%
+  at 96,300, 53.9% at 122,900 (round 240).
+- Estimate (guessed): 60 to 100 s per iteration, so 4 to 6 hours and 8 to 12 units.
+- Checked on the laptop: the new network starts with these settings; three tiny iterations with a change of
+  simulations, learning rate and memory size and a check against medium work. Not run on the L4.
+
 ## Settings of the large run (`src/train.py`)
 
 | Round | Time from start | What happens |

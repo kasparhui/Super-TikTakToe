@@ -35,6 +35,8 @@ MODEL_VARIANTS = {
     'large_long_no_owner': {'channels': 96, 'blocks': 8, 'lessons': ('outcome', 'moves')},
     # 'large' once more with nothing changed: shows how much two equal trainings differ by chance
     'large_repeat': {'channels': 96, 'blocks': 8},
+    # the size of 'small', trained from scratch with many more games (settings in train.py, RUN_SETTINGS)
+    'small_many': {'channels': 32, 'blocks': 4},
 }
 # Extra questions a network can be asked while it learns (never in play):
 #   'owner':   who holds each small board at the end of the game (me / the other / nobody), for the
