@@ -71,7 +71,10 @@ not too small. The learning-rate steps gave +5 to 6 points each time but less at
    - Plus the speed of large with the search on all cores (512 and 1024 games at once).
    - Rule: a test is used for the final run only if it wins the direct match against `more_games` 260 by
      53% or more (236 games, 500 simulations); otherwise 400 simulations on every move as in `more_games`.
-2. Final run, about 75 units (about 39 hours): large continued from the best of these networks; 1024 games
+2. Final run, about 75 units (about 39 hours), **in a folder of its own** (the user's wish, 17 November:
+   `Super-TikTakToe-models/final/` on Drive, `models/final/` on the laptop): the network, its memory, `logs/`,
+   `snapshots/`, `archive/` and its match results all go there; it starts from a copy of the chosen network and
+   its memory and writes nothing outside that folder. Large continued from the best of these networks; 1024 games
    per round; search on all cores; learning rate 0.0001, 0.00003 for the last 15%; memory 1.5 million
    positions (the network changes slowly at this rate, so older games stay good lessons; guessed); checks
    against large 240 (512 games, per-opening worse / equal / better) every 8 rounds; snapshot every 8 rounds.
