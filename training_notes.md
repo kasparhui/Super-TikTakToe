@@ -1,580 +1,255 @@
 # Training notes
 
-Last updated: 16 November 2026 (shortened; the long version with every single check is in git, commit `7c4277a`).
+Last updated: 17 November 2026 (shortened again; the long version with every check and interim reading is
+in git, commit `00a719e`, and before that `7c4277a`).
 This file is the memory of the project's training decisions. It is kept up to date whenever something
 that influences the training changes.
 
 ## Where things stand
 
-- **Large is finished and level with medium.** Large (96 channels, 8 blocks, 1.84 million weights, 240 rounds
-  from scratch on Colab) scores 52.3% against medium at 500 simulations and 50.0% at 2000. So 2.75 times
-  the weights gave almost nothing: size is not the limit. No bigger network for now.
-- **Training settings alone do not fix it.** Continuing large with twice the games per round gave +2.4
-  points, with twice the simulations nothing.
-- **The line layers (design D5) are the first change that ends higher.** Up to round 100 they only learned
-  faster (both about 47% at round 100). After the learning-rate step they lead large by 4.9 points over
-  rounds 124 to 160 (56.0% against 51.1% against medium, ahead in all 9 checks), and at round 160 stand at
-  57.4%, above large's final 54.8%. A round costs 1.4 to 1.5 times as long. **But in a direct match
-  it loses slightly to large** (round 240): 46.9% at 500 and 47.7% at 2000 simulations.
-- **Lessons about the long game** (owner, result as three chances, move values): no clear gain, not used.
+- **Size is not the limit.** Large (1.84M weights) ended level with medium (0.67M): 52.3% at 500
+  simulations, 50.0% at 2000.
+- **Training settings alone do not fix it.** Twice the games per round gave +2.4 points, twice the
+  simulations nothing.
+- **Line layers (design D5):** learn about twice as fast per lesson and lead large in the training checks
+  against medium (56.0% against 51.1% over rounds 124 to 160), but **lose a direct match against large**
+  (46.9% / 47.7%) and cost 1.4 to 1.5 times the time per round. Not stronger; not continued for now.
+- **Lessons about the long game** (owner, result as three chances, move values): 0 to 3 points, inside the
+  chance between two equal runs. Not used.
+- **Now running: `small_many`** (small network, 2048 games per round, search on all cores): the bet that
+  many more games of a cheaper network beat a bigger network. See "Current run".
 
-## Results of the night of 15 to 16 November 2026
+## Current run: `small_many` (started 17 November, Colab L4)
 
-**Colab: line network (`large_lines`, 1.98M weights) from scratch, 100 rounds with large's settings.**
-Log: `models/alphazero_large_lines_log.csv`. Checks against medium (256 games, uncertain by about 3 points each):
+- Small size (32 channels, 4 blocks, 0.19M weights) from scratch; 2048 games per round, all at once; search
+  tree on all processor cores. Settings in `RUN_SETTINGS` in `src/train.py`; notebook `colab_small_many.ipynb`;
+  command `python -u src/train.py run small_many 150`.
+- Schedule by games, like large: 200 simulations until round 25 (51,200 games = large's round 100), then 400;
+  learning rate 0.001, 0.0003 from round 76, 0.0001 from 126 (guessed). Memory 450,000 positions, 900,000
+  from round 76; every position used 4 times. 150 rounds = 307,000 games, 2.5 times large's whole run.
+- Judged by: checks against medium every 4 rounds, compared with large **at the same number of games**
+  (large: 48.4% at 51,200, 49.0% at 61,400, 50.8% at 81,900, 54.7% at 96,300, 53.9% at 122,900 = round 240);
+  and at the end a direct match against medium and large (last notebook cell,
+  `alphazero_small_many_tournament.csv`).
+- Measured: about 60 s per round at 200 simulations, so about 5.7 times large's games per hour.
+  Guessed: 100 to 110 s per round from round 26, about 4.5 hours and 9 units in all.
 
-| Round | Line network | Large | | Round | Line network | Large |
-|---|---|---|---|---|---|---|
-| 4 | 3.5% | 1.6% | | 56 | 44.5% | 33.6% |
-| 8 | 8.4% | 4.7% | | 64 | 43.2% | 37.3% |
-| 12 | 13.5% | 6.6% | | 72 | 42.2% | 43.9% |
-| 20 | 18.8% | 13.7% | | 80 | 47.3% | 42.8% |
-| 32 | 26.2% | 21.9% | | 88 | 42.8% | 45.7% |
-| 40 | 40.0% | 28.5% | | 96 | 49.2% | 47.3% |
-| 48 | 43.8% | 35.5% | | 100 | 46.7% | 48.4% |
-
-- Ahead at every check up to round 68 (largest lead 11 points at rounds 40 and 56). From round 48 on it
-  moves between 41% and 49% without rising; large catches up at round 72. Mean of the last 5 checks:
-  47.3% against 46.4%, no difference.
-- Its losses stay lower to the end: value loss 0.106 against 0.122, policy loss 1.282 against 1.293 at round 100.
-  So it fits its own games better, but that did not become more points against medium.
-- Time: 7.9 hours against large's 3.9 hours for the same 100 rounds (rounds went from 190 s to 300 s as the
-  games got longer), about 15 units. Twice as long, not the guessed 20 to 50%. The faster network copy does
-  not cover this design yet.
-- By time: the line network reached 40% after 3.0 hours, large after about 2.8 hours. No gain per hour.
-- Not measured: a direct match of the two networks at round 100 (the file `alphazero_large_lines.pt` is on
-  Drive, not on the laptop). The check against medium is an indirect measure and may hide a difference.
-- Guessed, not measured: both stop at the same level because the first 100 rounds' settings (200 simulations)
-  set the limit there, not the design. Large only went on rising after round 100 with 400 simulations.
-
-**Laptop: `src/test_designs.py night` (6.1 hours; log `models/pretest/night.log`).**
-
-| Question | Result |
-|---|---|
-| Does anything add to the lines? (medium, 6,000 steps, match against D5, two runs) | No. D8 whole-board summary 39.8% / 41.1%; D5n 16 numbers per line 46.8% / 40.3%; D5w 64 numbers 45.1% / 44.7%; C3 with learned board summary 42.2% / 43.0%. All below 50%; 32 numbers per line stays. |
-| Does the gain hold at large size? (6,000 steps, match against D0) | Yes. D5 66.1% / 65.7%; a second D0 gets 52.5% (the noise). Distance 0.240 against 0.265 / 0.254, value error 0.122 against 0.133. |
-| Does the gap close with longer learning? (medium, 36,000 steps) | Partly. Match 61.4% (was 71% at 6,000 steps). Distance 0.182 against 0.201, value error 0.109 against 0.115. D5 after 18,000 steps is where D0 is after 36,000. |
-| D8 at large size (match against D5) | Worse: 45.3% / 36.2%, distance 0.267 / 0.278 against 0.240. Dropped. |
-
-**Read together:** the line layers reach the same quality with about half the lessons, at every size tested,
-and the lead gets smaller the longer both learn. No test so far shows a higher final level.
-
-## Lessons about the long game (prepared and first two runs, 16 November 2026)
-
-Why: large and medium ended level, the line network ended level with large, so the limit is probably in the
-lessons and not in the network. Today a position teaches the moves and one mixed number for the outcome.
-
-**The three extra lessons** (outputs next to the two heads; used only while learning, play is unchanged and
-no slower; 3,600 more weights):
-
-| Lesson | What the network has to answer | Where it comes from |
-|---|---|---|
-| `owner` | For every small board that is still open: who holds it at the end, me / the other / nobody | the final board of the game |
-| `outcome` | How the game ends, as three chances: win / tie / loss | the result alone (not mixed with the search value) |
-| `moves` | How good the search found every move it tried | the search tree at the root; a move counts fully from 16 visits |
-
-- The owner is not a plan and is not used to choose moves. It is the chance over the games that follow from
-  this position, exactly like the value. If it depends too much on the opponent's later moves to be worth
-  anything, the test without it shows that (the user's doubt, 16 November).
-- Weights next to policy and value loss (`LESSON_WEIGHTS` in `src/train.py`): owner 0.5, outcome 0.5,
-  moves 1.0. Guessed, not tuned.
-- Code: outputs and `LESSONS` in `src/Tic_Tac_Toe_NN.py`; recording in `self_play`, memory (`EXTRA`) and
-  `lesson_losses` in `src/train.py`; `root_move_values` in `src/MCTS.py`. Self-play always records the
-  lessons; only networks with the outputs learn from them. Old memories load as "not known".
-- Checked on the laptop with a small network: 166,994 owner answers against boards decided later in the same
-  game, none wrong; the result class fits the result; the visit-weighted move values equal the search value
-  (correlation 1.000); the targets turn together with the position; memory save / load / resize keep them;
-  a network without the outputs learns as before; a run that is stopped and continued works.
-
-**The test:** `colab_long_game.ipynb`, one Colab session per network, 100 rounds from scratch with large's
-settings, compared with large's log (14% at round 20, 28% at 40, 35% at 60, 43% at 80, 48% at 100):
-
-| `NETWORK` | What it shows |
-|---|---|
-| `large_long` | all three lessons |
-| `large_long_no_owner` | without the owner: is the owner lesson worth it? |
-| `large_repeat` | large again, nothing changed: how much two equal trainings differ by chance (never measured; large's log is a single run) |
-
-Estimate: 2.5 to 3 hours and 5 to 6 units per network (guessed from large's 3.9 hours and the faster copy).
-Command inside the notebook: `python -u src/train.py run <NETWORK> 100`.
-
-**Measured (16 November, L4, 100 rounds each; logs `models/alphazero_large_long_log.csv` and
-`models/alphazero_large_repeat_log.csv`).** Points against medium, 256 games per check:
-
-| Round | large (older run) | `large_repeat` | `large_long` | line network |
-|---|---|---|---|---|
-| 20 | 13.7% | 12.7% | 14.8% | 18.8% |
-| 40 | 28.5% | 29.5% | 31.4% | 40.0% |
-| 60 | 35.4% | 34.8% | 35.0% | 42.0% |
-| 80 | 42.8% | 36.7% | 38.9% | 47.3% |
-| 100 | 48.4% | 40.8% | 43.8% | 46.7% |
-| mean of all 25 checks | 30.6% | 27.2% | 30.4% | 34.8% |
-| mean of the last 10 checks (rounds 64 to 100) | 44.2% | 39.4% | 42.4% | 45.4% |
-| hours for 100 rounds | 3.93 | 2.53 | 2.60 | 7.92 |
-
-- **Chance between two equal trainings is about 3 points.** `large_repeat` is the same network and settings
-  as large and ends 3.4 points lower on average (below large in 19 of 25 checks, 4.8 points lower over the
-  last 10). Not fully equal: large's run is older and played without the faster network copy. Whether that
-  matters is not known.
-- **The lessons show no gain that stands out from that.** `large_long` is 3.2 points above `large_repeat`
-  on average (ahead in 20 of 25 checks) but 0.2 below the older large run. One run each, so a real gain of
-  0 to 3 points fits the numbers; a clear gain like the line network's early lead (up to 11 points) is not
-  there.
-- What the extra outputs learned (loss at round 1 -> 100): owner 1.025 -> 0.911 (pure guessing is 1.099, so
-  the final owner of a board is hardly predictable, which fits the user's doubt); result as three chances
-  1.028 -> 0.764; move values 0.012 -> 0.022 (flat from round 10).
-- Value loss at round 100: `large_long` 0.110, `large_repeat` 0.110, large 0.121. Policy loss 1.333, 1.338,
-  1.293. The lessons do not change either.
-- Time: the lessons cost about 3% (2.60 against 2.53 hours). Both runs took about 5 units. The faster copy
-  makes large's 100 rounds 1.55 times as fast as the older run (2.53 against 3.93 hours).
-**Third run, `large_long_no_owner` (16 November, L4, 100 rounds, 2.61 hours, about 5 units; log
-`models/alphazero_large_long_no_owner_log.csv`):**
-
-| | large (older run) | `large_repeat` | `large_long` | `large_long_no_owner` |
-|---|---|---|---|---|
-| Round 20 | 13.7% | 12.7% | 14.8% | 14.6% |
-| Round 40 | 28.5% | 29.5% | 31.4% | 30.9% |
-| Round 60 | 35.4% | 34.8% | 35.0% | 40.8% |
-| Round 80 | 42.8% | 36.7% | 38.9% | 41.2% |
-| Round 100 | 48.4% | 40.8% | 43.8% | 42.6% |
-| mean of all 25 checks | 30.6% | 27.2% | 30.4% | 30.0% |
-| mean of the last 10 checks | 44.2% | 39.4% | 42.4% | 42.0% |
-
-- **The owner lesson neither helps nor hurts.** Without it the run is 0.3 points below `large_long` on
-  average (ahead in 10 of 25 checks), far inside the 3 points of chance. It can be dropped.
-- **Both lesson runs sit about 3 points above `large_repeat`** (+3.2 and +2.8 on average, ahead in 20 and 21
-  of 25 checks) and level with the older large run (-0.2 and -0.6). So the lessons are worth 0 to 3 points
-  against medium at 100 rounds; which end of that is true depends on whether `large_repeat` or the older
-  large run is the typical one, and that needs more equal runs to tell.
-- Without the owner, the result as three chances is learned slightly slower (0.774 against 0.764 at round
-  100), the move values the same (0.022). Value loss 0.114, policy loss 1.326 at round 100.
-- **Decision:** the lessons are not a step forward that is worth building on by itself. Not taken into the
-  main training for now.
-
-## What comes after
-
-1. Open decision: is twice the learning speed per game worth it? Only if the line network runs about as
-   fast as large. The faster network copy now covers the line network (16 November: `folded` and
-   `_fast_copy` in `src/Tic_Tac_Toe_NN.py`). Checked on the laptop: same answers (move probabilities differ
-   by 0.00002), it follows a change of the weights, and the translation into faster code works on the
-   processor; 6,150 against 4,450 positions per second on the laptop's chip.
-   **Measured on the L4** (`pretest.py bottleneck`, 512 games at once, 400 simulations, ms per move of a game):
-
-   | | as before | rearranged copy | copy, translated |
-   |---|---|---|---|
-   | line network | 12.6 | 10.4 | 6.8 |
-   | large | 7.2 | 5.6 | 4.3 |
-
-   The copy makes the line network's self-play 1.85 times as fast, but large gains 1.67 times too, so the
-   line network stays 1.58 times slower per move (was 1.75). The network is 88% of its time. So per hour the
-   line layers win little or nothing unless the layers themselves get faster (untried: sum along the lines
-   without the big 81 x 72 table multiplications, which fit the card's fast memory layout badly).
-   Part 1 of that test ("network alone") shows the line network 5 times slower than large (20,900 against
-   107,300 positions per second); that does not fit part 3 and is probably caused by the test's random,
-   non-0/1 inputs (guessed: answers that are not a number get asked again in full precision). Not looked into.
-   **Tried against that (16 November, speed on the L4 not measured yet):** the copy can build the summaries
-   with picture operations instead of the tables (`picture_summary` in `src/test_designs.py`; rows and columns
-   by pooling, diagonals with fixed masks). Same answers (differences of 0.000003, also for D8, C2, D5w). On the
-   laptop's chip it is slower (4,000 against 6,200 positions per second), so it is switched off
-   (`FAST_LINES = False` in `src/Tic_Tac_Toe_NN.py`) until the L4 says otherwise:
-   `!python -u src/pretest.py bottleneck large_lines` now shows two more lines in part 3 ("summaries as
-   picture operations"). If they beat 6.8 ms, set `FAST_LINES = True`.
-   **Measured on the L4:** picture operations, translated: 6.2 ms per move against 6.7 ms with the tables
-   (8% faster, 23 s of translating once); without translation they are slower (13.2 against 10.5 ms). Too
-   little to close the gap to large's 4.3 ms; `FAST_LINES` stays off for now. Noticed: with them the card is
-   busy only 50% of the time while the network call is 89% of the time, so half of that time is not spent
-   computing on the card. Suspected (not measured): answers that are not a number in half precision are
-   asked again in full precision more often for the line network; that would also explain part 1.
-   The speed test now counts this ("asked again in full precision: ... of ... positions").
-   **Counted on the L4: the suspicion was wrong for real play.** In self-play 0 of 819,200 positions were
-   asked again, in every way of asking. Only part 1 with its random inputs is hit (84% of the positions
-   asked again), so part 1 says nothing about the line network; ignore it. Second measurement of the picture
-   operations, translated: 5.9 ms against 6.6 ms with the tables (first: 6.2 against 6.7), so about 9% faster
-   both times. **Result: the line network is 1.4 to 1.5 times slower than large in self-play (5.9 to 6.6 ms
-   against 4.3 ms per move), and that is the cost of the layers, not a fault.** No further speed work planned.
-   The network class still lives in `src/test_designs.py`.
-2. A direct match `large_lines` against large's round-100 snapshot (both files from Drive) would show
-   whether the equal score against medium hides a difference.
-3. **Done (17 November): the line network from round 100 to 160, it is ahead of large**, with large's settings
-   (400 simulations from round 101, learning rate 0.0003 from round 121). Notebook `colab_design_lines.ipynb`,
-   command `python -u src/train.py run large_lines 160`; it continues from the files on Drive. No code changed.
-   Why: all comparisons so far ran at the high learning rate, where large went flat too and rose about 5
-   points after the step. So the line network's flat stretch from round 48 may be that ceiling reached early
-   (guessed).
-   Compared with large: 46.7% over rounds 104 to 120, 51.1% over 124 to 160, 54.8% at the end (round 240).
-   Rule set beforehand: about 55% or more over rounds 124 to 160 means the line network is ahead and is run to
-   the end; near 51% means the line layers do not end higher and are dropped. Two equal trainings differ by
-   about 3 points, so only a lead of 4 points or more counts.
-   Estimate (guessed): 280 to 330 s per round, 4.7 to 5.5 hours, 9 to 11 units. From: large took 291 s per
-   round over these rounds without the faster copy (7.2 ms per move), the line network with the copy
-   measured 6.8 ms per move.
-   **Interim (17 November, rounds 136 to 144, from the Colab lines):** against medium 55.1% / 55.9% / 59.0% at
-   rounds 136 / 140 / 144, mean 56.6%; large at the same rounds 48.8% / 48.8% / 53.5%, mean 50.4%. So 6 points
-   ahead, and already above large's final 54.8% (round 240). Only 3 checks of 256 games (each about 2 points
-   uncertain), so not settled before round 160. Policy loss 1.18 against large's 1.21, value loss 0.099
-   against 0.106. Round times 236 to 318 s of self-play (about 255 s typical), faster than guessed.
-   Half precision: 183 to 14,650 of about 9.5 million positions asked again per round (0.002% to 0.2%);
-   round 141, the one with 0.2%, took 318 s against 236 to 268 for the others, so the re-asking may cost time
-   when it is frequent (one case, not shown). Not a problem yet; watch whether it grows.
-   Prepared for after round 160: a direct match of the line network against the finished large and medium
-   (both round 240), 500 and 2000 simulations, 256 games per pair and setting (`test_tournament.py` with its
-   settings given in the last cell of `colab_design_lines.ipynb`; results in
-   `alphazero_large_lines_tournament.csv`). Tried on the laptop with medium against small; not run on the L4.
-   Stopped by the user after round 148 (17 November): 57.0% against medium at round 148. A second stop signal
-   came before the saving, so the memory of rounds 146 to 148 was not saved (the network of round 148 was, as
-   after every round). Continuing loses about 80,000 of 300,000 positions in memory; small effect (guessed).
-   Fixed in `src/train.py`: only the first stop signal counts from now on (tested on the laptop with six
-   signals in a row while saving).
-   **Result at round 160 (log `models/alphazero_large_lines_log.csv`):**
-
-   | Round | 104 | 112 | 120 | 128 | 136 | 144 | 152 | 160 | mean 124 to 160 |
-   |---|---|---|---|---|---|---|---|---|---|
-   | line network | 48.6% | 48.8% | 52.1% | 53.3% | 55.1% | 59.0% | 55.9% | 57.4% | 56.0% |
-   | large | 49.6% | 46.3% | 49.0% | 49.6% | 48.8% | 53.5% | 52.9% | 50.8% | 51.1% |
-
-   - Ahead of large in all 9 checks from round 124 on, by 4.9 points on average (0.6 to 7.0). That meets the
-     rule set beforehand (about 55% or more, a lead of 4 points or more), though only just on the lead.
-     Large is the higher of the two equal large runs (`large_repeat` was 3.4 points lower), so the comparison
-     is not flattering the line network.
-   - At round 160 it stands at 57.4%, above large's final 54.8% at round 240.
-   - Policy loss 1.166 against large's 1.205 at round 160; value loss 0.101 against 0.105.
-   - Round 132 is missing from the log (the network went on; the line was not written, probably a stop between
-     saving the network and writing the log). So the mean is over 9 checks, not 10.
-   - Time: rounds 101 to 160 took 4.83 hours (295 s per round on average, 258 to 349 s), about 9.4 units.
-   - Reading: the learning-rate step lifted the line network by about 6 points (from about 50% to 56%), as it
-     lifted large by about 5. The flat stretch from round 48 was the ceiling of the high learning rate.
-   **Direct match (17 November, L4, 256 games per pair and setting, no randomness; file
-   `models/alphazero_large_lines_tournament.csv`), points of the line network at round 160:**
-
-   | | 500 simulations | 2000 simulations |
-   |---|---|---|
-   | against large (round 240) | 46.9% +-1.9 (39-162-55) | 47.7% +-1.5 (23-198-35) |
-   | against medium (round 240) | 56.4% +-1.8 (63-163-30) | 51.2% +-1.7 (42-178-36) |
-   | for comparison: large against medium | 52.3% +-1.7 | 50.0% +-1.6 |
-
-   - No bug in the display: the results are from the first-named player's side, and the side check fits
-     (moving first scores more in every pair, as always).
-   - The results do not add up neatly: against medium the line network does 4 points (500) or 1 point
-     (2000) better than large does, but against large itself it loses by 2 to 3 points. Part of that is
-     chance: every number is uncertain by about 2 points, so a gap of 4 to 7 points between such numbers is
-     unusual but possible. Part may be real: a player can be good against one opponent's habits and not
-     against another's (large and medium learned in the same way and play alike; guessed).
-   - Not equal training: the line network has 160 rounds at learning rate 0.0003; large has 240 rounds and
-     the last 50 at 0.0001. Large's snapshot test showed little gain after round 160 (48.4% to 52.3% at 500
-     simulations), so this explains at most part of it (guessed).
-   - At 2000 simulations most games end in ties (198 of 256 against large), so differences get small.
-   - Reading: the line network at round 160 is not stronger than large at round 240 in a direct match; it is
-     about level or slightly weaker. The lead in the training checks against medium was real against medium
-     but does not carry over to large.
-   Next possible step: the line network at round 160 against large's snapshot of round 160 (equal rounds;
-   the snapshot is on Drive), before deciding on running it to round 240.
-   The first 100 rounds got slower on the way (the user's observation: 190 to 200 s of self-play per round at
-   first, about 270 s from round 30; the log shows 217 s per round in rounds 1 to 10 and 275 s from round 21).
-   Why is not known. Not longer games: the positions per round stay at about 26,500 to 27,000 in every run.
-   Not half precision either: that run did not use it. Large with the faster copy stayed flat (82 to 88 s).
-   Whether half precision costs time in the continuation is open: the count of 0 positions asked again was
-   taken on an earlier network. The training line now shows "asked again in full precision: ... of ...
-   positions" whenever that happens (`src/train.py`; only syntax-checked, not run).
-4. Lessons about the long game: all three networks run, no clear gain, the owner lesson changes nothing (see the section above).
-5. Still open: 1024 games per round from the start; large against minimax on the laptop; D7 at equal
-   thinking time; which layer overflows in half precision (optional).
-
-## Smaller network and many more games (idea of 17 November)
-
-The user's remaining hope: a simpler, faster network and many more games. Fits what is measured (medium with
-0.67 million weights is level with large's 1.84 million; more games was the only setting that helped).
-Plan: 1. measure the speed of medium and small; 2. build what that shows is needed (search tree on several
-processor cores, and/or full search on only some moves, as KataGo does); 3. one long run with large's Colab
-time but 5 to 10 times the games (guessed), judged by a direct match against large at round 240.
-
-**First measurement, by mistake on a T4 with 2 processor cores (not the L4), 400 simulations, ms per move of
-a game, faster copy translated, 512 games at once:** medium 5.5, small 3.3. Small needs about a sixth of
-medium's computing but is only 1.7 times as fast: with small the card is busy only about 40% of the time and
-the search tree takes 30 to 42% (one core). So for a small network the processor side is the limit, not the
-card. At 1024 games at once: medium 4.8, small 2.6 (part 2, without the faster copy's translation). Not
-comparable with large's L4 numbers (4.3); to be measured again on the L4, with large on the same machine.
-
-**Measured on the L4 (17 November, 12 cores, 400 simulations, ms per move of a game, faster copy translated;
-large from 16 November):**
-
-| Games at once | 256 | 512 | 1024 | 2048 | search tree share at the best size |
-|---|---|---|---|---|---|
-| large | 6.9 | 4.3 | 4.5 | 5.5 | 19% (512) |
-| medium | 5.9 | 3.1 | **2.2** | 2.5 | 32% (1024) |
-| small | 5.1 | 2.8 | 2.0 | **1.7** | 60% (2048) |
-
-- At its best size medium is 2.0 times and small 2.5 times as fast as large; not the 3 and 20 times their
-  computing would allow. Small and medium only gain from more games at once (1024 or 2048), unlike large.
-- With small the card is busy only about 20% of the time: the search tree on one core takes 60%, and much
-  of the network's 40% is the processor preparing the questions.
-- Guessed effect of the search tree on all 12 cores (its share shrinking to about an eighth): small at 2048
-  about 0.8 ms (5 times large), medium at 1024 about 1.6 ms (2.7 times large). Full search on only a quarter
-  of the moves (KataGo's trick) could add about 2 times on top.
-
-**Built (17 November): the search tree on all processor cores** (`SEARCH_THREADS = 'all'` in `src/MCTS.py`;
-1 = as before). The walk down the tree and the use of the network's answers now run for many games at the same
-time (`_select_batch_parallel`, `_expand_batch_parallel`; every game has its own scratch space). Training,
-tests and play use it without any other change.
-- Checked on the laptop: one core and all cores give exactly the same visit counts and values (64 games,
-  100 simulations, 6 moves, no noise); with noise it runs; two small training rounds work.
-- Laptop speed of the search tree alone (network replaced by a table, 200 simulations): 2.3 times as fast at
-  1024 games, 3.3 times at 2048 on 10 cores; the walk down the tree gains 3.6 times, the use of the answers
-  only about 2 times. Not measured on the L4 (12 cores there, probably 6 real ones; gain guessed 2 to 3 times).
-- The speed test (`pretest.py bottleneck <network>`) now shows part 2 with the search tree on 1 core and on all
-  cores, for every number of games at once.
-- Also 4096 games at once in the speed test now (the user's idea: with the search tree on all cores, bigger
-  groups for the network may pay off; small alone on the card still got faster from 1024 to 2048 positions
-  at once: 383,000 against 584,000 per second, card busy 51%). Search trees then need about 2.6 GB of memory.
-
-**Measured on the L4 (17 November), ms per move of a game, 400 simulations, faster copy translated:**
-
-| Games at once | 512 | 1024 | 2048 | 4096 |
-|---|---|---|---|---|
-| medium, 1 core | 3.3 | 2.6 | 2.8 | 3.3 |
-| medium, 12 cores | 2.9 | **1.9** | 2.0 | 2.4 |
-| small, 1 core | 3.0 | 2.2 | 2.0 | 2.2 |
-| small, 12 cores | 2.3 | 1.4 | **0.9** | 1.0 |
-| large, 1 core (16 November) | 4.3 | 4.5 | 5.5 | |
-
-- All cores make small 2.2 times as fast at 2048 games (2.0 to 0.9 ms) and medium 1.4 times at 1024.
-- Against large's 4.3 ms: **small 4.8 times as fast, medium 2.3 times** (at their best group size).
-- 4096 games at once gives nothing more (small 1.0, medium 2.4 ms); the network alone gets slower above
-  2048 positions at once. So 2048 for small, 1024 for medium.
-- With small at 2048, the search tree is 26% of the time and the network call 74%, but the card is busy only
-  40%: the rest of the call is the processor preparing the question (one core). The next possible speed-up
-  is there (guessed: avoiding copies of the positions; not measured).
-- Large on all cores is not measured (its search tree was 19% of the time, so perhaps 15% faster; guessed).
-
-**Prepared (17 November, not run yet): `small_many`**, the size of small (32 channels, 4 blocks, 0.19 million
-weights) from scratch, 2048 games per iteration all at once, the search on all cores (the user's choice instead
-of a capacity test first). Settings in `RUN_SETTINGS` in `src/train.py` (used by
-`python -u src/train.py run small_many 150`), notebook `colab_small_many.ipynb`:
-- Schedule by games, like large: 200 simulations until iteration 25 (51,200 games = large's iteration 100),
-  then 400; learning rate 0.001, 0.0003 from iteration 76, 0.0001 from 126 (all guessed). Memory 450,000
-  positions (about 4 iterations), 900,000 from iteration 76; every position used 4 times as before.
-- 150 iterations = 307,000 games, 2.5 times large's whole run. Check against medium every 4 iterations (256
-  games, 100 simulations) as before; afterwards a direct match against medium and large (last cell).
-- Large against medium at the same number of games: 48.4% at 51,200, 49.0% at 61,400, 50.8% at 81,900, 54.7%
-  at 96,300, 53.9% at 122,900 (round 240).
-- Estimate (guessed): 60 to 100 s per iteration, so 4 to 6 hours and 8 to 12 units.
-- Checked on the laptop: the new network starts with these settings; three tiny iterations with a change of
-  simulations, learning rate and memory size and a check against medium work. Not run on the L4.
-
-## Settings of the large run (`src/train.py`)
+## Settings of the large run (`src/train.py`, the reference for all comparisons)
 
 | Round | Time from start | What happens |
 |---|---|---|
 | 1 to 100 | 0 to 3.9 hours | 200 simulations per move, learning rate 0.001, memory 300,000 positions |
-| 100 | 3.9 hours | Simulations go to 400; rounds take about twice as long |
-| 120 | 5.5 hours | Learning rate 0.0003 |
-| 190 | about 10 hours | Learning rate 0.0001, memory 600,000 |
-| 240 | about 14 hours | Saves and stops by itself |
+| 101 | 3.9 hours | 400 simulations; rounds take about twice as long |
+| 121 | 5.5 hours | Learning rate 0.0003 |
+| 191 | about 10 hours | Learning rate 0.0001, memory 600,000 |
+| 240 | about 14 hours | Stops (before the faster copy; now about 1.5 times as fast) |
 
 Also: 512 games per round, all at once; every position used 4 times; snapshot every 4 rounds; every 4 rounds
-256 games against medium (100 simulations, always the same openings); no minimax during training.
+256 games against medium (100 simulations, same openings), uncertain by about 3 points each.
 
 ## Decisions and why
 
 - **Pure network.** No minimax in play or training; minimax is only a measuring opponent (the user's preference).
 - **From scratch.** A large network taught only from medium's last games scored 19% against medium.
-- **Judge by games, not by the loss.** Medium's loss fell from round 61 to 130 while its strength stood still.
-  In the design tests the design with the lowest loss (C2) was not the strongest.
-- **Learning-rate rule.** Keep the rate while the points against the reference rise from check to check; lower
-  it when they are flat. That moved the steps from rounds 80 and 160 to 120 and 190.
-- **512 games at once.** Fastest on the L4 (see speed).
-- **Search setting (c_puct) stays 1.5** in training and play. A narrower search helps only at short thinking time.
-- **Change one thing at a time,** so its effect can be read from the checks.
-- **Compare losses only within the same number of simulations;** more simulations lower the policy loss by themselves.
+- **Judge by games, not by the loss.** Medium's loss fell from round 61 to 130 while its strength stood still;
+  design C2 had the lowest loss but was not the strongest; the line network had lower losses than large and
+  still lost the direct match.
+- **Judge by a direct match, not only by the checks against medium.** The line network led in the checks
+  and lost to large directly.
+- **Chance between two equal trainings is about 3 points** (`large_repeat`), so only a lead of 4 points or
+  more over many checks counts. Set the rule before the run.
+- **Learning-rate rule.** Keep the rate while the checks rise; lower it when they are flat. Every step so far
+  lifted the checks by about 5 to 6 points.
+- **Search setting (c_puct) stays 1.5.** A narrower search helps only at short thinking time.
+- **Change one thing at a time**; compare losses only at the same number of simulations.
 
-## Results
+## What was tried and what came out
 
-### Large against medium
+### Bigger network: large against medium
 
-Checks during training (256 games, 100 simulations):
+Training checks (256 games, 100 simulations):
 
-| Rounds | 20 | 40 | 60 | 80 | 100 | 80 to 120 | 124 to 160 | 164 to 188 | 192 to 216 | 220 to 240 |
-|---|---|---|---|---|---|---|---|---|---|---|
-| Points | 13.7% | 28.5% | 35.4% | 42.8% | 48.4% | 46.2% | 51.1% | 52.3% | 53.2% | 54.8% |
+| Rounds | 20 | 40 | 60 | 80 | 100 | 124 to 160 | 164 to 188 | 192 to 216 | 220 to 240 |
+|---|---|---|---|---|---|---|---|---|---|
+| Points | 13.7% | 28.5% | 35.4% | 42.8% | 48.4% | 51.1% | 52.3% | 53.2% | 54.8% |
 
-(The averages are uncertain by about 1.2 points.) The step of the learning rate at round 120 lifted the checks
-by about 5 points; after that they crept up by about 1 point per 25 rounds.
-
-Snapshot test (large snapshot against medium round 240, 256 games, about 2 points uncertain):
+Snapshot match against medium round 240:
 
 | Large round | 40 | 80 | 120 | 160 | 200 | 240 |
 |---|---|---|---|---|---|---|
 | 500 simulations | 25.8% | 40.6% | 37.7% | 48.4% | 52.1% | 52.3% |
 | 2000 simulations | 28.9% | 41.4% | 39.1% | 48.0% | 52.0% | 50.0% |
 
-Reading: the last learning-rate step and the last 40 rounds added nothing measurable. With more thinking time
-large looks a little weaker than in the check at 100 simulations, which overstates it by 2 to 4 points. Ties
-grow with the rounds and the thinking time (192 of 256 at 2000 simulations). Large scored about 57% moving
-first and 43 to 48% moving second.
+The last 40 rounds added nothing measurable. The checks at 100 simulations overstate large by 2 to 4
+points. Ties grow with thinking time (192 of 256 at 2000). Moving first scores about 57%.
 
-### Training tests on Colab (large continued from round 240, checks with 512 games)
+### Training settings (large continued from round 240, checks with 512 games)
 
-Baseline, large's last 4 checks played again: 52.7% (+-0.7%). Rule set beforehand: 3 points or more is a real
-gain, 1 point or less is none.
+Baseline 52.7%. `more_games` (1024 games per round, each position used 2 times): 55.1%, +2.4 points, likely
+real. `more_simulations` (800): 52.8%, nothing. Both at the lowest learning rate.
 
-| Test | Change | All checks | Last 3 checks |
-|---|---|---|---|
-| `more_games` (to round 260) | 1024 games per round, each position used 2 times | 55.1% (+-0.7%) | 54.6% (+-0.9%) |
-| `more_simulations` (to round 272) | 800 simulations | 52.8% (+-0.5%) | 51.4% (+-0.9%) |
+### Search, medium and uttt.ai
 
-Reading: more games help a little (+2.4 points, likely real, under the 3 points asked for), more simulations
-do not. Both ran at the lowest learning rate, so "no gain" is weaker evidence than a gain.
+- **Medium** levelled off from about round 140. Against minimax (2000 simulations): 96/88/88/76% against
+  depth 12/13/14/15; 4000 simulations added nothing.
+  At 2000 simulations against depth 15: 108 wins, 51 ties, 17 losses of 176 (`models/alphazero_medium_vs_minimax.csv`;
+  the moves of those games were not saved).
+- **Endgame check** (`src/test_endgame.py`, 12 November; `models/alphazero_medium_endgame.csv`): medium round
+  132 against **itself**, 64 games, 2000 simulations; minimax depth 14 checked 2075 network moves from move 20.
+  Missed proven win: 7 of 109 moves where a win was proven (some may only be slower wins). Moved into a proven
+  loss when nothing was proven before: 8 of 1880. Games: 48 ties, 16 decisive. So traps are rare
+  but not absent. Not run against minimax (the script can: `OPPONENT_DEPTH = 15`).
+- **Search setting** against 1.5: 0.5 scored 55.1% at 500 and 49.4% at 2000; 0.75 54.7% / 50.0%; 2.5 42.4%.
+- **Search depth:** the main line grows by 2 to 3 moves per doubling of simulations (12 at 500, 17 at 2000).
+- **Against uttt.ai's network** (236 games, our search for both): 47.0% at 500, 50.6% at 2000, so level.
+  Their network is 2.2 times slower per position. (Files local only in `external/`; results in
+  `models/alphazero_medium_vs_utttai.csv`.)
 
-### Medium, the search, and uttt.ai
+### Network designs (`src/test_designs.py`)
 
-- **Medium** levelled off from about round 140; round 240 scored about 55% against round 132. Against minimax
-  (round 132, 2000 simulations): 96/88/88/76% against depth 12/13/14/15; 4000 simulations added nothing.
-- **Search setting** (medium against itself, other setting against 1.5): 0.5 scored 55.1% at 500 simulations
-  and 49.4% at 2000; 0.75 scored 54.7% and 50.0%; 2.5 scored 42.4% at 500.
-- **Search depth:** the main line grows by 2 to 3 moves per doubling of the simulations (about 12 moves at
-  500, 17 at 2000, 20 at 4000).
-- **Medium against uttt.ai's network** (236 games, equal simulations; files local only in `external/` and
-  `src/test_vs_utttai.py`; results in `models/alphazero_medium_vs_utttai.csv`): with this project's search for
-  both, medium scores 47.0% at 500 simulations and 50.6% at 2000, so the networks are level. With their own
-  search settings their network plays worse (medium 51.5% and 57.8%). Their network is about 2.2 times slower
-  per position than medium.
+**Method.** Each design learns from large's saved positions (6,000 steps, medium size), then is measured on
+held-back positions (distance to the search's moves, value error) and in a 236-game match at 200
+simulations (uncertain by about 2.5 points; two runs of the same design differ by about 5). Shows how well a
+design learns from given lessons, not how it trains itself.
 
-## Design tests (`src/test_designs.py`)
-
-**Method.** Every design is a new network that learns from large's saved positions (540,000; the newest 60,000
-are held back), 6,000 steps of 256 positions at medium size (64 channels, 6 blocks). Measured on the held-back
-positions: distance to the search's move probabilities and value error (smaller is better). Then a match of
-236 games (118 openings from both sides) at 200 simulations, uncertain by about 2.5 points. Two runs of
-today's design differ by about 5 points in the match and 0.009 in distance, so smaller differences mean nothing.
-**Limit:** this shows how well a design learns given lessons, not how it trains itself.
-
-| Design | What is changed | Distance | Value error | Against D0 (two runs) | Against D5 (two runs) |
+| Design | What is changed | Distance | Value error | Against D0 | Against D5 |
 |---|---|---|---|---|---|
 | D0 | today's design | 0.285, 0.276 | 0.136, 0.133 | 46.0% | 28.6% |
 | D1 | filters stay inside the small board | 0.246 | 0.130 | 59.7%, 56.6% | |
-| D2 | small-board summary by a learned step instead of the average | 0.273 | 0.132 | 48.1% | |
-| D3 | permanent board track, value read from it | 0.283 | 0.134 | 53.8% | |
-| D4 | each board hears from the 9 cells that send into it | 0.267 | 0.133 | 55.5% | |
+| D2 | learned small-board summary | 0.273 | 0.132 | 48.1% | |
+| D3 | permanent board track | 0.283 | 0.134 | 53.8% | |
+| D4 | each board hears from the 9 cells sending into it | 0.267 | 0.133 | 55.5% | |
 | **D5** | **line layers** | **0.232, 0.235** | **0.128, 0.121** | **70.6%, 71.0%** | |
 | D6 | exact facts as 8 extra input pictures | 0.268 | 0.134 | 61.2%, 56.4% | |
-| D7 | whole body on the 3x3 big board (as uttt.ai), 2.6 times as fast | 0.317 | 0.146 | 41.3% | 22.0% |
+| D7 | whole body on the 3x3 big board (as uttt.ai) | 0.317 | 0.146 | 41.3% | 22.0% |
 | C1 | D1 + D5 | 0.241, 0.235 | 0.122, 0.122 | 69.1%, 65.9% | 44.5%, 43.0% |
 | C2 | D1 + D4 + D5 + D6 | 0.229, 0.230 | 0.120, 0.119 | 66.7%, 66.1% | 50.8%, 45.1% |
 
-**Reading.** D5 alone is the winner: its gain repeats, and no combination beats it in a direct match although
-C2 has the lowest losses. D1 and D6 help a little alone but not on top of D5; D2, D3, D4 are within the noise.
+Night tests (laptop, 6.1 hours) against D5: D8 whole-board summary 39.8% / 41.1% (and 45.3% / 36.2% at large
+size), 16 or 64 numbers per line instead of 32 and a learned board summary all below 50%. At large size D5
+beat D0 66%; with 6 times longer learning the lead shrank to 61% (D5 after 18,000 steps = D0 after 36,000).
+**So the line layers reach the same quality with about half the lessons, and the lead shrinks the longer both
+learn.**
 
-**How the line layers work.** In every block, each cell's description is shortened to 32 numbers, added up
-along each of the 72 small lines (fixed table), worked on by a learned step (same weights for all lines), and
-each cell gets back the sum of the lines through it. The same is done for the 8 lines of the big board with
-the 9 small-board descriptions. Nothing of today's design is removed; 7% more weights.
+**How the line layers work.** In every block each cell is shortened to 32 numbers, added up along each of
+the 72 small lines, worked on by one learned step shared by all lines, and each cell gets back the sum of the
+lines through it; the same for the 8 lines of the big board. 7% more weights. They gain most where the whole
+board matters (free choice of board, late game: value error -24%) and nothing in the opening. Hardest for
+every network: the middle game with 3 to 4 boards decided.
 
-**Where the errors are** (held-back positions; D0 and D5 are averages of two runs; "large" has learned from
-these positions, so its numbers are flattering). Value error, and how often the search's best move is found:
+### Line network trained itself (`large_lines`, 1.98M weights, large's settings)
 
-| Kind of position | Share | D0 | D5 | Large |
+| Round | 20 | 40 | 56 | 72 | 100 | 120 | 136 | 144 | 160 | mean 124 to 160 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| line network | 18.8% | 40.0% | 44.5% | 42.2% | 46.7% | 52.1% | 55.1% | 59.0% | 57.4% | 56.0% |
+| large | 13.7% | 28.5% | 33.6% | 43.9% | 48.4% | 49.0% | 48.8% | 53.5% | 50.8% | 51.1% |
+
+- Rounds 1 to 100: ahead by up to 11 points until round 68, then flat at 41 to 49% and level at round 100.
+  By hours no gain (7.9 against 3.9 hours, before its faster copy).
+- After the learning-rate step it led in all 9 checks from round 124, by 4.9 points; that met the rule set
+  beforehand (55% or more, lead of 4 or more). Rounds 101 to 160: 4.83 hours, 9.4 units. Round 132 is
+  missing from the log.
+- **Direct match** (round 160, 256 games per pair, `models/alphazero_large_lines_tournament.csv`):
+
+  | | 500 simulations | 2000 simulations |
+  |---|---|---|
+  | against large (round 240) | 46.9% (39-162-55) | 47.7% (23-198-35) |
+  | against medium (round 240) | 56.4% (63-163-30) | 51.2% (42-178-36) |
+  | for comparison: large against medium | 52.3% | 50.0% |
+
+  Not stronger than large; the lead against medium does not carry over to large (each number about 2 points
+  uncertain; large also had 80 more rounds). Not tried: against large's snapshot of round 160 (equal rounds).
+
+### Lessons about the long game (`large_long`, 100 rounds each, 16 November)
+
+Three extra outputs used only while learning (3,600 weights, 3% more time): `owner` (who holds each open
+small board at the end), `outcome` (win / tie / loss as three chances, from the result alone), `moves` (the
+search's value of every tried move). Code: `LESSONS` in `src/Tic_Tac_Toe_NN.py`, `LESSON_WEIGHTS` and
+`lesson_losses` in `src/train.py`, `root_move_values` in `src/MCTS.py`.
+
+| | large (older run) | `large_repeat` | `large_long` | `large_long_no_owner` |
 |---|---|---|---|---|
-| no board decided | 44% | 0.090 / 74% | 0.089 / 77% | 0.087 / 84% |
-| 1-2 boards decided | 24% | 0.127 / 60% | 0.126 / 62% | 0.107 / 71% |
-| 3-4 boards decided | 15% | 0.221 / 56% | 0.213 / 60% | 0.154 / 67% |
-| 5+ boards decided | 17% | 0.185 / 54% | 0.140 / 58% | 0.078 / 67% |
-| sent to one board | 89% | 0.133 / 66% | 0.127 / 69% | 0.103 / 76% |
-| free choice of board | 11% | 0.147 / 53% | 0.112 / 58% | 0.075 / 67% |
+| Round 100 | 48.4% | 40.8% | 43.8% | 42.6% |
+| mean of all 25 checks | 30.6% | 27.2% | 30.4% | 30.0% |
+| mean of rounds 64 to 100 | 44.2% | 39.4% | 42.4% | 42.0% |
 
-Reading: the line layers gain most where the whole board matters (free choice and late game: move distance
-about -30%, value error -24%) and nothing for the value in the opening, where all networks have the same error
-(noise in the lessons). Hardest for every network: the middle game with 3-4 boards decided, and late free
-choices (large finds the best move in 61% of them). Missing in D0 and D5: a summary of the whole board for
-every cell (tested tonight as D8) and lessons about the long game.
+- `large_repeat` (large again, nothing changed) shows **chance between equal runs of about 3 points**.
+- The lessons: +3 over `large_repeat`, level with the older large run, so 0 to 3 points. The owner of a
+  board is hardly predictable (loss 0.91 against 1.10 for guessing) and dropping it changes nothing.
 
-**Commands:** `speed`, `train [names]` (`D0:1` = second run), `match [names] [vs=D5]`, `summary`, `night`; behind
-any of them `size=large` and `steps=36000`. Results: `models/design_tests.csv`, `models/design_matches.csv`;
-networks in `models/pretest/` (not in git).
+### Speed (Colab L4 unless said otherwise)
 
-## Speed and cost
+- **Faster network copy** (`FAST_PLAY`, `COMPILE` in `src/Tic_Tac_Toe_NN.py`): normalisation folded into the
+  filters, other memory layout, half precision, `torch.compile`; checked against the real network after every
+  change. Large self-play 7.1 to 4.3 ms per move (1.65 times); covers the line network too (6.8 ms; with
+  `FAST_LINES` 5.9 to 6.2, kept off).
+- **Card test (large, 512 at once):** the network itself is 86% of a question, copying 11%. So own code has
+  at most about 10% left; more games at once cannot help large. Only less computing per position helps.
+- **Search tree on all processor cores** (`SEARCH_THREADS = 'all'` in `src/MCTS.py`; numba `prange`, every
+  game its own scratch space; exactly the same results as one core).
+- **ms per move of a game, 400 simulations, faster copy:**
 
-- **Colab L4:** 1.94 units per hour, 12 processor cores. Large: 105 to 125 seconds per round at 200
-  simulations, 250 to 280 at 400 (before the faster copy). T4: about 4 and 7 minutes. Mac: 16 and 31 minutes.
-- **Units are not a tight limit** (the user buys more if needed); state the cost, but do not cut useful tests.
-  Units are charged while a session is connected; bought units expire.
-- **What limits self-play on the L4:** the network on the card takes 89% of the time, the search tree 11%.
-  512 games at once is fastest (13.0 / 7.0 / 7.8 / 10.7 ms per move of a game at 256 / 512 / 1024 / 2048);
-  bigger groups are slower per position, cause unknown. GPU and system memory are barely used.
-  **With the faster copy (large, L4, 16 November): 6.9 / 4.3 / 4.5 / 5.5 ms** at 256 / 512 / 1024 / 2048, so
-  more games at once still do not help; 512 stays. The network alone gives 107,000 positions per second at
-  512 and 1024 and 85,000 at 2048. Noticed: in self-play the network call is 81% of the time while the card
-  is busy only 60% of the time, so part of the call is not the card computing (copying, converting; guessed).
-  To see it: `python -u src/pretest.py card large` now has a part 1b that splits one question of the faster
-  copy into: to the card, made ready, network, back (cell at the end of `colab_pretest.ipynb`; tried on the
-  laptop's processor, not run on the L4 yet). If the network part is most of it, only a different engine
-  (TensorRT) could help; if copying is a big part, that can be cut in our own code.
-  **Measured on the L4 (17 November, large, faster copy, ms per question):**
+  | Games at once | 512 | 1024 | 2048 | 4096 |
+  |---|---|---|---|---|
+  | large, 1 core | 4.3 | 4.5 | 5.5 | |
+  | medium, 12 cores | 2.9 | **1.9** | 2.0 | 2.4 |
+  | small, 1 core | 3.0 | 2.2 | 2.0 | 2.2 |
+  | small, 12 cores | 2.3 | 1.4 | **0.9** | 1.0 |
 
-  | Positions at once | to the card | made ready | network | back | whole question | positions per second |
-  |---|---|---|---|---|---|---|
-  | 512 | 0.36 | 0.08 | 3.90 | 0.16 | 4.54 | 112,800 |
-  | 1024 | 0.57 | 0.10 | 8.43 | 0.22 | 9.42 | 108,700 |
-  | 2048 | 0.99 | 0.08 | 21.68 | 0.33 | 23.37 | 87,600 |
-
-  Reading: the network itself is 86% of a question; copying there and back is about 11% (0.5 ms of 4.5).
-  Twice the positions take a little more than twice the time, so at 512 the card is already computing at
-  full speed; the lower "card busy" figure of the speed test comes from the search tree and the copying
-  around it. **So our own code has at most about 10% left to gain** (by cutting the copying), and more games
-  at once cannot help. Only less computing per position helps: a smaller or cheaper network, or a different
-  engine (TensorRT; its gain on this network is a guess, perhaps 1.2 to 1.5 times on the network part).
-  Decision: no further speed work for now.
-- **Faster network copy** (`FAST_PLAY`, `COMPILE` in `src/Tic_Tac_Toe_NN.py`): on Nvidia cards the search asks
-  a rearranged copy (normalisation worked into the filters, other memory layout, half precision, translated
-  with `torch.compile`). It is renewed when the weights change, checked against the real network after every
-  change, and switches itself off if it disagrees. Measured: network alone 1.9 times as fast; self-play 7.1 to
-  4.3 ms per move (1.65 times); real rounds 319 seconds instead of 544 (800 simulations) and 291 instead of
-  536 (1024 games). Only today's design is covered. The line "Not enough SMs to use max_autotune_gemm mode"
-  is harmless.
+  Small is 4.8 times and medium 2.3 times as fast as large. For small at 2048 the card is busy only 40%;
+  the limit is the processor preparing the questions on one core (next possible speed-up, guessed).
+- The line network's slowdown in its first 100 rounds (217 s to 275 s per round) is unexplained; not longer
+  games, not half precision.
 
 ## Known problems
 
-- **Half precision fails in rare positions** (a number inside the network gets too big). This ruined the
-  network once in round 33. Now those positions are asked again in full precision, damaged positions never
-  reach the memory, and learning stops without saving if the loss is not a number.
-- **The stop button on Colab can send its signal twice.** Saving ignores further signals; wait for "Saved to ...".
+- **Half precision fails in rare positions** (once ruined a network in round 33). Such positions are asked
+  again in full precision (counted in the training line), damaged positions never reach the memory, and
+  learning stops without saving if the loss is not a number.
+- **The stop button on Colab can send its signal twice.** Since 17 November only the first counts; still wait
+  for "Saved to ...".
 - **A dropped session** loses at most the running round; the memory can be up to 4 rounds older.
-
-**Signs that something is wrong:** a round of large takes more than 150 seconds at 200 simulations (320 at
-400, before the faster copy); a message about "not a number"; the points against medium fall over several checks.
+- **Signs of trouble:** a large round over 150 s at 200 simulations; "not a number"; checks falling over
+  several rounds.
 
 ## How to
 
-- **Train on Colab:** `colab_train.ipynb`, L4, run the cells from the top. After a disconnect run all cells again.
-- **Train another network with the same settings:** `python -u src/train.py run <network> <rounds>`.
-- **Use new code:** stop the training cell, run the code cell, run the training cell.
+- **Train on Colab:** `colab_train.ipynb` (or the run's own notebook), L4, run all cells; after a disconnect
+  run all again. A Drive copy of a notebook does not update from git: open it from GitHub or add cells by hand.
+  Colab allows two sessions at once.
+- **Train another network with the same settings:** `python -u src/train.py run <network> <rounds>`
+  (per-network settings in `RUN_SETTINGS`).
 - **Go back to a snapshot:** `python -u src/train.py restore <round>`.
-- **Training test:** `colab_experiment_<name>.ipynb`, or `python3 src/train.py experiment <name>` (settings: `EXPERIMENTS`).
-- **Snapshots against medium:** `colab_test.ipynb` (multiples of 40, 500 and 2000 simulations, only what is missing).
-- **What limits the speed / faster ways on the card:** `python -u src/pretest.py bottleneck` and `... card` (3 minutes each).
-- **Chart of a log on the laptop:** `/usr/bin/python3 src/plot_log.py large`.
-- **Files on Drive** (`Super-TikTakToe-models`): the networks, `snapshots/`, logs, memories, `experiments/<name>/`.
-- **When a run ends:** Runtime > Disconnect and delete runtime, so the units stop.
+- **Training test:** `python3 src/train.py experiment <name>` (settings: `EXPERIMENTS`).
+- **Matches:** `test_tournament.py`, settings set via `python -c` (see the last cell of a run's notebook);
+  points are from the first-named player's side. Snapshots against medium: `colab_test.ipynb`.
+- **Speed:** `python -u src/pretest.py bottleneck <network>` and `... card <network>`.
+- **Design tests:** `src/test_designs.py` with `speed`, `train`, `match`, `summary`, `night`
+  (`size=large`, `steps=36000`); results `models/design_tests.csv`, `models/design_matches.csv`.
+- **Chart of a log:** `/usr/bin/python3 src/plot_log.py <network>`.
+- **Files on Drive** (`Super-TikTakToe-models`): networks, `snapshots/`, logs, memories.
+- **When a run ends:** Runtime > Disconnect and delete runtime. L4 costs 1.94 units per hour; units are not
+  tight (state the cost, don't cut useful tests).
 - **On the laptop** only `/usr/bin/python3` has the packages; long runs with `caffeinate -i`.
-
-## If a bigger network is trained later (`xlarge`: 128 channels, 10 blocks)
-
-Only worth it once something makes size pay off. Then: measure the cost first (`pretest.py speed xlarge`,
-about 1.75 times large on the T4); expect the half-precision overflow earlier; do not copy round numbers but
-use the learning-rate rule; check against large instead of medium; stop if it is not ahead of large by round 40 to 60.
 
 ## What others have built (web research, 15 November 2026)
 
-- **uttt.ai** (github.com/ar-nowaczynski/utttai): about 5 million weights, 256 channels, 3 blocks; its body works
-  on the 3x3 grid of small boards. Trained in two stages of about 8 million positions each, with many
-  simulations per position. It also learns a value for every move.
-- **CodinGame arena** (100 ms per move, no graphics card): tiny networks of about 215,000 weights that only
-  judge positions, fast search, over 300 million positions. Their rules break ties differently.
-- **Solved?** Only a rule variant is proven a first-player win; our rules are unsolved.
-- **Compared with us:** large saw about 6.4 million positions. Others used similar or far more data and a
-  design built around the small boards.
+- **uttt.ai:** about 5M weights, 256 channels, 3 blocks on the 3x3 grid; two stages of about 8M positions;
+  learns a value for every move.
+- **CodinGame arena:** tiny networks (about 215,000 weights), fast search, over 300M positions.
+- Only a rule variant is proven a first-player win; our rules are unsolved.
+- Large saw about 6.4M positions; others used similar or far more data.
 
-## Untested ideas
+## Open and untested ideas
 
-- A learned description for each of the 19,683 fillings of a small board.
-- An attention network with the game's links built in.
-- Games that carry over from one round to the next, so more can run at once without bigger rounds.
-- A search setting between 1.0 and 1.5 in training; weight decay and the search's value for untried moves were never tuned.
+- Line network round 160 against large's snapshot of round 160 (equal rounds).
+- Full search on only some moves (KataGo's trick; guessed up to 2 times faster).
+- Preparing the network's questions faster on the processor (small's limit).
+- Large with the search on all cores (guessed about 15% faster); TensorRT (guessed 1.2 to 1.5 times on the
+  network part; not recommended).
+- 1024 games per round from the start for large; large against minimax; D7 at equal thinking time.
+- A bigger network (`xlarge`, 128/10) only once something makes size pay off: measure cost first, use the
+  learning-rate rule, check against large, stop if not ahead by round 40 to 60.
+- A learned description for each of the 19,683 fillings of a small board; an attention network with the
+  game's links built in; games that carry over between rounds; tuning c_puct 1.0 to 1.5 in training,
+  weight decay, and the value for untried moves.
