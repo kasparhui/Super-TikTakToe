@@ -19,6 +19,36 @@ that influences the training changes.
 - **Now running: `small_many`** (small network, 2048 games per round, search on all cores): the bet that
   many more games of a cheaper network beat a bigger network. See "Current run".
 
+## Plan for the remaining units (the user's plan, 17 November)
+
+99 units left: about 4 for the rest of `small_many`, about 10 kept for later tests, about 85 for **one final
+model, as good as possible and making few mistakes**. Before that: a thorough review of all experiments, with
+5 to 10 units of tests only if needed. The user's goal and doubt: a 50% match where both sides win and lose
+on the same openings means both made mistakes; the final model should, against medium on the same openings,
+lose rarely and hold the draw.
+
+Checked on the saved matches (both games of each opening, one from each side): large 240 against medium 240
+at 2000 simulations, 118 openings: both games tied 68, one game decided and one tied 43, each side won once
+(the side moving first both times) 4, large won both 2, medium won both 1. At 500 simulations: 55 / 54 / 5 /
+2 / 2. So "each wins one" is rare; the typical mistake is one decided game in a pair, on about 40% of the
+openings at 2000 simulations (from 61% for large round 40). That share is a better measure of mistakes than
+the score.
+
+**Measure for the final model (the user's rule):** per opening, add the points of both games. Below 1 (for
+example a loss and a tie, or two losses) = played worse on that opening; above 1 = played better; 1 = equal.
+Openings worse / equal / better (118 openings; from the saved match files):
+
+| | 500 simulations | 2000 simulations |
+|---|---|---|
+| large 40 against medium 240 | 88 / 26 / 4 | 81 / 32 / 5 |
+| large 120 against medium 240 | 56 / 49 / 13 | 52 / 50 / 16 |
+| large 240 against medium 240 | 23 / 60 / 35 | 22 / 72 / 24 |
+| line network 160 against medium 240 | 19 / 53 / 46 | 26 / 59 / 33 |
+| line network 160 against large 240 | 36 / 54 / 28 | 27 / 73 / 18 |
+
+Goal: worse on few openings (large 240 is still worse on about 22). Note that a few openings may favour one
+side so much that "equal" there means both played well (each won once with the first move: 4 at 2000).
+
 ## Current run: `small_many` (started 17 November, Colab L4)
 
 - Small size (32 channels, 4 blocks, 0.19M weights) from scratch; 2048 games per round, all at once; search
