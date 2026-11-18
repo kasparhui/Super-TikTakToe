@@ -166,6 +166,21 @@ Measured: about +3 points and about 11 fewer worse openings since the start, but
 this learning rate; earlier runs gained most at the learning-rate steps. Decision noted: look again around
 round 550; if still flat, consider placing the step to 0.00003 earlier.
 
+**Reading at round 627 (18 November evening):** 12.57 of 36 hours used (129 s per round), about 356,000 new games;
+the run ends near round 1280, the step to 0.00003 comes near round 1130. The plateau was not one; the checks rose on:
+
+| rounds | points | openings worse / equal / better |
+|---|---|---|
+| 440 to 496 (8 checks) | 55.6% | 47 / 116 / 93 |
+| 504 to 560 (8 checks) | 56.2% | 51 / 103 / 103 |
+| 568 to 624 (8 checks) | 57.3% | 51 / 97 / 109 |
+
+Measured: about +1 point per 60 rounds since round 380 (±0.5 per block of 8 checks), the best check so far 59.8% at
+616. Policy loss slightly down (1.223 to 1.210), value loss 0.104 to 0.103, ties in self-play steady at about 549.
+But the worse openings stopped falling at about 50 of 256 since round 440: the gain comes from equal openings turning
+into better ones, not from fewer mistakes against large 240 (at 100 simulations; the 500 and 2000 simulation
+matches at the end will tell more). Decision: nothing changed; the step to 0.00003 stays at 85% of the time.
+
 Not proposed, and why: bigger network (size is not the limit yet); line layers (lost to large, 1.45 times
 slower); medium (2.3 times faster, but less room to grow over a long run; small showed the size cap);
 long-game lessons (no gain); more simulations (no gain); proofs of game ends in the search (traps are rare;
