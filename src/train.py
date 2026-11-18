@@ -20,6 +20,7 @@ On Google Colab: see colab_train.ipynb.
     python3 src/train.py run large_lines 60      trains another network than MODEL with the same
                                                  settings, up to this iteration
     python3 src/train.py match fast_moves more_games   the newest networks of two tests play each other
+    python3 src/train.py final                   the final model, in models/final/ (see FINAL below)
 """
 import csv
 import os
@@ -99,6 +100,7 @@ EVAL_SIMULATIONS = 100      # search size of the network in these games
 # (always the same openings, from both sides). It needs only the graphics card. The file of that
 # network (models/alphazero_<REFERENCE>.pt) must be in the models folder; without it the check is skipped.
 REFERENCE = 'medium'        # which finished network (None = no such check)
+REFERENCE_ITERATION = None  # None: its finished file; a number: its snapshot of that iteration (models/snapshots/)
 REFERENCE_EVERY = 4
 REFERENCE_GAMES = 256       # must be even; all are played at the same time
 REFERENCE_SIMULATIONS = 100 # search size of both networks in these games
@@ -109,6 +111,9 @@ SNAPSHOT_EVERY = 4          # every this many iterations a copy of the network i
 # learning time (without the checks; log column work_seconds) of the iterations after that one reaches the
 # seconds. None = no limit. Used to compare tests at the same computing time.
 TIME_LIMIT = None
+# With TIME_LIMIT: (share, rate) = once this share of the time is used, the learning rate is `rate` (the last
+# fine tuning, placed by time because the number of iterations is not known beforehand). None = not used.
+LATE_LEARNING_RATE = None
 # Keep every game in a compact archive (one file per iteration in models/archive/, about 30 bytes per learned
 # position instead of about 1 KB in the memory): the moves and the result of every game, and for every learned
 # position the visits of the moves the search tried and its value. archive_positions() turns a file back into
@@ -139,6 +144,23 @@ EXPERIMENTS = {
 # MATCH_OPENINGS openings (those of test_tournament.py) from both sides, without randomness.
 MATCH_OPENINGS = 128
 MATCH_SIMULATIONS = 500
+
+# The final model (18 November):  python3 src/train.py final   (on Google Colab: colab_final.ipynb)
+# Large continued from the winner of the tests (sims_200: 56.8% against more_games 260, rule 53%), with its
+# settings, for about 75 units, in the folder models/final/ (nothing is written outside it). The first time,
+# the network and memory of FINAL_START and large's snapshot 240 (the yardstick) are copied there.
+FINAL_START = os.path.join('experiments', 'sims_200')
+FINAL = {
+    'GAMES_PER_ITERATION': 1024, 'PARALLEL_GAMES': 1024, 'REPLAY_RATIO': 2,
+    'SIMULATIONS_GROWTH': {100: 400, 240: 200},
+    'BUFFER_GROWTH': {190: 600000, 279: 1500000},     # about 28 iterations of positions
+    'SAVE_BUFFER_EVERY': 10,                          # the memory is about 1.6 GB
+    'REFERENCE': 'large', 'REFERENCE_ITERATION': 240, 'REFERENCE_EVERY': 8, 'REFERENCE_GAMES': 512,
+    'SNAPSHOT_EVERY': 8, 'ARCHIVE': True,
+    # 36 hours of self-play and learning after iteration 279 (the start); learning rate 0.0001, then
+    # 0.00003 for the last 15% of that time
+    'ITERATIONS': 5000, 'TIME_LIMIT': (279, 36 * 3600), 'LATE_LEARNING_RATE': (0.85, 3e-5),
+}
 
 # Networks whose training uses other settings than the ones above; they are used when the network is
 # trained with  python3 src/train.py run <network> <iterations>  (or when it is MODEL).
@@ -531,7 +553,8 @@ def evaluate(model, device, depth, games=EVAL_GAMES, simulations=EVAL_SIMULATION
 def against_reference(model, reference, device):
     """The network against a finished network, both with tree search and without randomness.
     The openings (2 moves) are the same in every check, each played from both sides.
-    Returns (wins, ties, losses) of the network."""
+    Returns (wins, ties, losses, worse, equal, better) of the network: the last three count the openings on
+    which its two games together gave less than, exactly or more than 1 point (win 1, tie 0.5)."""
     import test_networks
     random = np.random.RandomState(0)
     games = []
@@ -546,7 +569,10 @@ def against_reference(model, reference, device):
     search = MCTS.BatchedSearch(model, device, len(games), REFERENCE_SIMULATIONS)
     other = MCTS.BatchedSearch(reference, device, len(games), REFERENCE_SIMULATIONS)
     results = [result for result, _ in test_networks.play_batch(search, other, games)]
-    return tuple(results.count(r) for r in test_networks.RESULTS)
+    points = [{'win': 1.0, 'tie': 0.5, 'loss': 0.0}[result] for result in results]
+    sums = [points[i] + points[i + 1] for i in range(0, len(points), 2)]      # both sides of one opening
+    return (tuple(results.count(r) for r in test_networks.RESULTS)
+            + (sum(s < 1 for s in sums), sum(s == 1 for s in sums), sum(s > 1 for s in sums)))
 
 
 def repeat_checks(reference, device, log_file, columns):
@@ -556,26 +582,32 @@ def repeat_checks(reference, device, log_file, columns):
     with open(log_file, newline='') as file:
         reader = csv.DictReader(file)
         fields, rows = list(reader.fieldnames or []), list(reader)
-    if columns[0] not in fields:
+    missing = [c for c in columns if c not in fields]      # e.g. the per-opening counts in an older log
+    if missing:
         place = fields.index('seconds') if 'seconds' in fields else len(fields)
-        fields[place:place] = columns
+        fields[place:place] = missing
     for row in rows:
         iteration = int(row['iteration'])
-        played = sum(int(float(row[c])) for c in columns[1:] if row.get(c) not in ('', None))
+        played = sum(int(float(row[c])) for c in columns[1:4] if row.get(c) not in ('', None))
         if (iteration % REFERENCE_EVERY or played == REFERENCE_GAMES
                 or not os.path.exists(snapshot_path(MODEL, iteration))):
             continue
         start = time.perf_counter()
         result = against_reference(NN.load_model(MODEL, device, iteration), reference, device)
-        row.update(zip(columns, (score(*result),) + result))
+        row.update(zip(columns, (score(*result[:3]),) + result))
         with open(log_file + '.tmp', 'w', newline='') as file:
             writer = csv.DictWriter(file, fieldnames=fields, restval='')
             writer.writeheader()
             writer.writerows(rows)
         os.replace(log_file + '.tmp', log_file)
-        print(f"Iteration {iteration} again against '{REFERENCE}' with {REFERENCE_GAMES} games "
+        print(f"Iteration {iteration} again against '{reference_name()}' with {REFERENCE_GAMES} games "
               f'({played} before) in {time.perf_counter() - start:.0f}s (wins-ties-losses): '
-              f'{score(*result):.0%} ({result[0]}-{result[1]}-{result[2]})', flush=True)
+              f'{score(*result[:3]):.0%} ({result[0]}-{result[1]}-{result[2]})', flush=True)
+
+
+def reference_name():
+    """The yardstick's name in the log, e.g. 'medium' or 'large240' (a snapshot)."""
+    return f'{REFERENCE}{REFERENCE_ITERATION or ""}'
 
 
 def score(wins, ties, losses):
@@ -731,13 +763,16 @@ def main():
         print(f"New '{MODEL}' network ({parameters / 1e6:.2f} million parameters) on {device}")
 
     reference = None
-    if REFERENCE and REFERENCE != MODEL:
-        if os.path.exists(NN.checkpoint_path(REFERENCE)):
-            reference = NN.load_model(REFERENCE, device)
+    if REFERENCE and (REFERENCE != MODEL or REFERENCE_ITERATION):
+        reference_file = (NN.snapshot_path(REFERENCE, REFERENCE_ITERATION) if REFERENCE_ITERATION
+                          else NN.checkpoint_path(REFERENCE))
+        if os.path.exists(reference_file):
+            reference = NN.load_model(REFERENCE, device, REFERENCE_ITERATION)
         else:
-            print(f"No finished '{REFERENCE}' network in the models folder "
-                  f'({NN.checkpoint_path(REFERENCE)}): the check against it is skipped.')
-    reference_columns = [f'vs_{REFERENCE}', f'wins_{REFERENCE}', f'ties_{REFERENCE}', f'losses_{REFERENCE}']
+            print(f"No '{reference_name()}' network in the models folder "
+                  f'({reference_file}): the check against it is skipped.')
+    reference_columns = [f'{part}_{reference_name()}'
+                         for part in ('vs', 'wins', 'ties', 'losses', 'worse', 'equal', 'better')]
 
     def save(with_buffer):
         NN.save_checkpoint(checkpoint_file, model, optimizer, variant=MODEL,
@@ -807,6 +842,9 @@ def main():
             buffer.add(*data)
             steps = max(1, REPLAY_RATIO * stats['positions'] // BATCH_SIZE)
             rate = learning_rate(iteration)
+            if LATE_LEARNING_RATE and TIME_LIMIT and iteration >= TIME_LIMIT[0] \
+                    and used >= LATE_LEARNING_RATE[0] * TIME_LIMIT[1]:
+                rate = LATE_LEARNING_RATE[1]
             for group in optimizer.param_groups:
                 group['lr'] = rate
             policy_loss, value_loss = train(model, optimizer, buffer, device, steps)
@@ -850,10 +888,11 @@ def main():
                 if iteration % REFERENCE_EVERY == 0:
                     check_start = time.perf_counter()
                     result = against_reference(model, reference, device)
-                    row.update(zip(reference_columns, (score(*result),) + result))
-                    line += (f" | against '{REFERENCE}', {REFERENCE_GAMES} games in "
+                    row.update(zip(reference_columns, (score(*result[:3]),) + result))
+                    line += (f" | against '{reference_name()}', {REFERENCE_GAMES} games in "
                              f'{time.perf_counter() - check_start:.0f}s (wins-ties-losses): '
-                             f'{score(*result):.0%} ({result[0]}-{result[1]}-{result[2]})')
+                             f'{score(*result[:3]):.0%} ({result[0]}-{result[1]}-{result[2]}), '
+                             f'openings worse-equal-better {result[3]}-{result[4]}-{result[5]}')
             row['work_seconds'] = round(work)
             row['seconds'] = round(time.perf_counter() - start)
             write_log(log_file, row)
@@ -919,10 +958,46 @@ def experiment(name):
     experiment_summary()
 
 
+def final():
+    """The final model (FINAL) in models/final/. The first time, the network and memory of FINAL_START, its log
+    and large's snapshot of REFERENCE_ITERATION (the yardstick) are copied there; later calls continue."""
+    main_folder = NN.MODEL_DIR
+    folder = os.path.join(main_folder, 'final')
+    globals().update(FINAL)
+    started = os.path.exists(os.path.join(folder, os.path.basename(NN.checkpoint_path(MODEL))))
+    if not started:
+        start_folder = os.path.join(main_folder, FINAL_START)
+        reference = snapshot_path(REFERENCE, REFERENCE_ITERATION)
+        NN.MODEL_DIR = start_folder
+        try:
+            checkpoint_file, buffer_file, log_file = paths(MODEL)
+            newest = NN.saved_iteration(MODEL) if os.path.exists(checkpoint_file) else None
+        finally:
+            NN.MODEL_DIR = main_folder
+        if newest != TIME_LIMIT[0] or not os.path.exists(buffer_file):
+            raise SystemExit(f'The final run starts from the network of {start_folder} after iteration '
+                             f'{TIME_LIMIT[0]} with its memory, but there it is at iteration {newest}'
+                             + ('' if os.path.exists(buffer_file) else ' and has no saved memory') + '.')
+        if not os.path.exists(reference):
+            raise SystemExit(f'The yardstick {reference} is missing.')
+        print(f'Setting up the final run in {folder} from {start_folder} ...', flush=True)
+        copies = [(reference, os.path.relpath(reference, main_folder)),
+                  (buffer_file, os.path.basename(buffer_file)),
+                  (checkpoint_file, os.path.basename(checkpoint_file))]       # the network last: marks it as set up
+        if os.path.exists(log_file):
+            copies.insert(0, (log_file, os.path.relpath(log_file, start_folder)))
+        for source, target in copies:
+            _copy(source, os.path.join(folder, target))
+    NN.MODEL_DIR = folder
+    print(f"Final run ({'continued' if started else 'new'}): "
+          + ', '.join(f'{setting} = {value}' for setting, value in FINAL.items()), flush=True)
+    main()
+
+
 def experiment_summary():
     """Compares the checks of the test with the checks of the network it started from."""
     log_file = paths(MODEL)[2]
-    columns = [f'wins_{REFERENCE}', f'ties_{REFERENCE}', f'losses_{REFERENCE}']
+    columns = [f'wins_{reference_name()}', f'ties_{reference_name()}', f'losses_{reference_name()}']
     if not REFERENCE or not os.path.exists(log_file):
         return
     with open(log_file, newline='') as file:
@@ -1054,6 +1129,8 @@ if __name__ == '__main__':
         restore(int(sys.argv[2]))
     elif len(sys.argv) == 3 and sys.argv[1] == 'experiment':
         experiment(sys.argv[2])
+    elif len(sys.argv) == 2 and sys.argv[1] == 'final':
+        final()
     elif len(sys.argv) == 4 and sys.argv[1] == 'match':
         experiment_match(sys.argv[2], sys.argv[3])
     elif len(sys.argv) == 4 and sys.argv[1] == 'run':

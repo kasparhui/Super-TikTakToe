@@ -1,6 +1,6 @@
 # Training notes
 
-Last updated: 17 November 2026 (shortened again; the long version with every check and interim reading is
+Last updated: 18 November 2026 (test results and the final run; shortened on 17 November; the long version with every check and interim reading is
 in git, commit `00a719e`, and before that `7c4277a`).
 This file is the memory of the project's training decisions. It is kept up to date whenever something
 that influences the training changes.
@@ -21,6 +21,9 @@ that influences the training changes.
 - **The one lever that helped is more games**, and only where the network is big enough. Everything else
   ended at about the same level. Plan: put the remaining compute into large with many more games (see
   "Proposal for the final model").
+- **Tests for the final model (18 November):** `sims_200` (200 simulations, about 1.7 times the games per hour)
+  won its match against `more_games` 260 with 56.8% and passed the rule; `fast_moves` (KataGo's trick) 51.8%, did
+  not. The final run (`python3 src/train.py final`, notebook `colab_final.ipynb`) continues `sims_200`.
 
 ## Plan for the remaining units (the user's plan, 17 November)
 
@@ -52,7 +55,7 @@ Openings worse / equal / better (118 openings; from the saved match files):
 Goal: worse on few openings (large 240 is still worse on about 22). Note that a few openings may favour one
 side so much that "equal" there means both played well (each won once with the first move: 4 at 2000).
 
-## Proposal for the final model (17 November; tests built, final run not decided yet)
+## Proposal for the final model (17 November; tests run 18 November, final run built, see the end of this section)
 
 **Reading of all experiments together.** Medium and large ended level at the same games; the line network
 learned faster but ended level and lost to large directly; the lessons gave 0 to 3 points; 800 simulations
@@ -118,6 +121,34 @@ lessons of the memory (board pictures, policy, value). Not kept: the long-game l
 laptop: rebuilt lessons identical to the last bit, with and without the trick; 13 to 23 bytes per learned
 position at 40 simulations against 1,067 in the memory (at 400 simulations more moves are tried, guessed 20 to
 30 bytes, so about 0.6 to 1 GB for the final run). Off by default; the final run switches it on.
+
+**Results of the tests (18 November, L4, 5,600 s of self-play and learning each, reported by the user):**
+
+| | rounds | checks against medium (512 games): all / last 3 | match against `more_games` 260 (256 games, 500 sims) | openings worse / equal / better |
+|---|---|---|---|---|
+| `fast_moves` | 241 to 289 | 53.8% / 54.1% (±0.8) | 51.8% (39-187-30) | 15 / 82 / 21 |
+| `sims_200` | 241 to 279 | 55.0% / 56.9% (±0.8) | **56.8%** (54-183-19) | 12 / 68 / 38 |
+| `more_games` (for comparison) | 241 to 260 | 55.1% / 54.6% | | |
+
+Baseline (large's last 4 checks up to 240, played again with 512 games): 52.5% (±0.7). Measured: `sims_200` passed
+the rule set beforehand (53%) clearly and is better on more than three times as many openings as it is worse;
+`fast_moves` did not pass (its 51.8% is inside the chance). Reading (guessed): at this stage more games help more
+than a deeper search per move, and KataGo's trick, which learns only from a quarter of the moves, gave too few
+lessons per hour to make up for it.
+
+**The final run (built 18 November):** `python3 src/train.py final` (settings in `FINAL` in `src/train.py`; notebook
+`colab_final.ipynb`). Large continued from `sims_200` round 279 with its settings (1024 games per round, all at once,
+200 simulations, each position learned from twice); memory 1.5 million positions (about 28 rounds); learning rate
+0.0001 and, new, `LATE_LEARNING_RATE`: 0.00003 once 85% of the time is used (placed by time, since the number of
+rounds is not known beforehand); stops by `TIME_LIMIT` after 36 hours of self-play and learning (about 38 hours
+with the checks and restarts, about 75 units at 1.94 per hour). Guessed about 145 s per round, so about 890 rounds
+and 900,000 games (7 times large's run). Every 8 rounds a check against large's snapshot 240 (new:
+`REFERENCE_ITERATION`; log columns `vs_large240` ...) with 512 games, now also counting the openings worse / equal
+/ better (log columns `worse_`, `equal_`, `better_`; every check now counts them), and a snapshot. Archive on. Everything
+in `final/` (the first start copies the `sims_200` network, memory and log and large's snapshot 240 there). Drive
+space needed, guessed: snapshots about 2.4 GB, memory about 1.6 GB, archive about 1 GB. Tried on the laptop with
+a tiny setup: the setup copied only into `final/`, a restart continued and counted the time already used, the late
+learning rate began at its share of the time, the archive and the per-opening counts were written. Not run on the L4.
 
 Not proposed, and why: bigger network (size is not the limit yet); line layers (lost to large, 1.45 times
 slower); medium (2.3 times faster, but less room to grow over a long run; small showed the size cap);
