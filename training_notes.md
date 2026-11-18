@@ -180,6 +180,9 @@ Measured: about +1 point per 60 rounds since round 380 (±0.5 per block of 8 che
 But the worse openings stopped falling at about 50 of 256 since round 440: the gain comes from equal openings turning
 into better ones, not from fewer mistakes against large 240 (at 100 simulations; the 500 and 2000 simulation
 matches at the end will tell more). Decision: nothing changed; the step to 0.00003 stays at 85% of the time.
+Units: about 60 left at round 627 (matches the log: 13.0 hours at 1.94 per hour); the rest of the run about 48, the end
+matches about 3. Agreed with the user: if the checks still rise, add 3 hours (`TIME_LIMIT` 36 to 39 hours), decided
+before hour 30.6 of the limit (otherwise the learning rate would go back to 0.0001 for a while; see `LATE_LEARNING_RATE`).
 
 Not proposed, and why: bigger network (size is not the limit yet); line layers (lost to large, 1.45 times
 slower); medium (2.3 times faster, but less room to grow over a long run; small showed the size cap);
