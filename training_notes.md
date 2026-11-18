@@ -148,7 +148,23 @@ and 900,000 games (7 times large's run). Every 8 rounds a check against large's 
 in `final/` (the first start copies the `sims_200` network, memory and log and large's snapshot 240 there). Drive
 space needed, guessed: snapshots about 2.4 GB, memory about 1.6 GB, archive about 1 GB. Tried on the laptop with
 a tiny setup: the setup copied only into `final/`, a restart continued and counted the time already used, the late
-learning rate began at its share of the time, the archive and the per-opening counts were written. Not run on the L4.
+learning rate began at its share of the time, the archive and the per-opening counts were written.
+
+**Final run, reading at round 436 (18 November morning, log in `models/final/logs/`):** 157 rounds, 5.72 of 36 hours
+used (131 s of self-play and learning per round, 165 to 175 s with a check), about 161,000 new games. At this speed
+the run ends near round 1270 with about 1 million new games. Checks against large 240 (512 games, 100 simulations,
+±1.4 per check), averaged:
+
+| rounds | points | openings worse / equal / better |
+|---|---|---|
+| 280 to 312 (5 checks) | 51.3% | 65 / 115 / 76 |
+| 320 to 376 (8 checks) | 53.7% | 58 / 108 / 90 |
+| 384 to 432 (7 checks) | 54.2% | 54 / 113 / 89 |
+
+Measured: about +3 points and about 11 fewer worse openings since the start, but flat since about round 345. Losses flat
+(policy 1.22, value 0.104), ties in self-play slightly up (about 530 to about 550 of 1024). Guessed: a plateau at
+this learning rate; earlier runs gained most at the learning-rate steps. Decision noted: look again around
+round 550; if still flat, consider placing the step to 0.00003 earlier.
 
 Not proposed, and why: bigger network (size is not the limit yet); line layers (lost to large, 1.45 times
 slower); medium (2.3 times faster, but less room to grow over a long run; small showed the size cap);
