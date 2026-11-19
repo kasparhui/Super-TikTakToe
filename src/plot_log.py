@@ -3,10 +3,13 @@
     /usr/bin/python3 src/plot_log.py                 the model set in train.py
     /usr/bin/python3 src/plot_log.py small           another model
     /usr/bin/python3 src/plot_log.py medium out.png  save a picture instead of opening a window
+    /usr/bin/python3 src/plot_log.py final           the final run (models/final/); any folder of the
+                                                     models folder works, e.g. experiments/sims_200
 
 Works while the training is running; start it again to see the newest rounds.
 """
 import csv
+import os
 import re
 import sys
 
@@ -77,8 +80,11 @@ def plot_self_play(axis, rows):
 
 
 def opponent_name(key):
-    """'9' -> 'minimax depth 9', 'medium' -> "the 'medium' network"."""
-    return f'minimax depth {key}' if key.isdigit() else f"the '{key}' network"
+    """'9' -> 'minimax depth 9', 'medium' -> "the 'medium' network", 'large240' -> "'large' of round 240"."""
+    if key.isdigit():
+        return f'minimax depth {key}'
+    name, iteration = re.fullmatch(r'([a-z_]+?)(\d*)', key).groups()
+    return f"'{name}' of round {iteration}" if iteration else f"the '{name}' network"
 
 
 def plot_scores(axis, rows, opponents):
@@ -109,6 +115,21 @@ def plot_split(axis, rows, depth):
     legend(axis, loc='upper center', bbox_to_anchor=(0.5, -0.2), ncol=3)
 
 
+def plot_openings(axis, rows, key):
+    """Per opening (both games together), whether the network played worse, equal or better than the other."""
+    tests = [row for row in rows if row.get(f'worse_{key}') is not None]
+    x = [row['iteration'] for row in tests]
+    width = 0.8 * (min(b - a for a, b in zip(x, x[1:])) if len(x) > 1 else 1)
+    bottom = [0.0] * len(tests)
+    for name, color in (('better', GOOD), ('equal', NEUTRAL), ('worse', BAD)):
+        totals = [row[f'worse_{key}'] + row[f'equal_{key}'] + row[f'better_{key}'] for row in tests]
+        share = [row[f'{name}_{key}'] / total for row, total in zip(tests, totals)]
+        axis.bar(x, share, width, bottom=bottom, color=color, label=name, edgecolor=SURFACE, linewidth=0.5)
+        bottom = [b + s for b, s in zip(bottom, share)]
+    style(axis, f'Openings against {opponent_name(key)}', percent=True)
+    legend(axis, loc='upper center', bbox_to_anchor=(0.5, -0.2), ncol=3)
+
+
 def plot(model, save_as=None):
     log_file = train.paths(model)[2]
     rows = read_log(log_file)
@@ -117,11 +138,13 @@ def plot(model, save_as=None):
     names = rows[0].keys()
     depths = sorted(int(n.rsplit('_', 1)[1]) for n in names
                     if re.fullmatch(r'vs_minimax_\d+', n) and column(rows, n)[0])
-    networks = [n[3:] for n in names if re.fullmatch(r'vs_[a-z]+', n) and column(rows, n)[0]]
+    networks = [n[3:] for n in names if re.fullmatch(r'vs_[a-z_]+?\d*', n) and not n.startswith('vs_minimax')
+                and column(rows, n)[0]]
     depths = [str(d) for d in depths] + networks        # all test opponents
     split_depths = [d for d in depths if f'wins_{d}' in names and column(rows, f'wins_{d}')[0]]
+    openings = [d for d in networks if f'worse_{d}' in names and column(rows, f'worse_{d}')[0]]
 
-    columns = max(3, len(split_depths))
+    columns = max(3, len(split_depths) + len(openings))
     figure = plt.figure(figsize=(4.6 * columns, 11 if split_depths else 7.5), facecolor=SURFACE)
     grid = figure.add_gridspec(3 if split_depths else 2, columns)
     plot_loss(figure.add_subplot(grid[0, 0]), rows, 'policy_loss', 'Policy loss (lower = moves better predicted)')
@@ -131,6 +154,8 @@ def plot(model, save_as=None):
         plot_scores(figure.add_subplot(grid[1, :]), rows, depths)
     for i, depth in enumerate(split_depths):
         plot_split(figure.add_subplot(grid[2, i]), rows, depth)
+    for i, key in enumerate(openings):
+        plot_openings(figure.add_subplot(grid[2, len(split_depths) + i]), rows, key)
     figure.suptitle(f"Training of the '{model}' network: {len(rows)} rounds, "
                     f"{int(rows[-1]['games'])} games", x=0.02, ha='left', fontsize=13, color=INK)
     figure.tight_layout(rect=(0, 0, 1, 0.96), h_pad=2.5, w_pad=2.5)
@@ -143,6 +168,13 @@ def plot(model, save_as=None):
 
 if __name__ == '__main__':
     arguments = sys.argv[1:]
+    if arguments and arguments[0] not in NN.MODEL_VARIANTS:     # a folder of the models folder, e.g. final
+        folder = os.path.join(NN.MODEL_DIR, arguments.pop(0))
+        if not os.path.isdir(folder):
+            raise SystemExit(f'Neither a model nor a folder: {folder}')
+        NN.MODEL_DIR = folder
+        if not arguments or arguments[0] not in NN.MODEL_VARIANTS:
+            arguments.insert(0, 'large' if os.path.basename(folder) == 'final' else train.MODEL)
     model = arguments[0] if arguments else train.MODEL
     if model not in NN.MODEL_VARIANTS:
         raise SystemExit(f"Unknown model '{model}'. Use one of {list(NN.MODEL_VARIANTS)}.")
