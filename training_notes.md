@@ -184,6 +184,25 @@ Units: about 60 left at round 627 (matches the log: 13.0 hours at 1.94 per hour)
 matches about 3. Agreed with the user: if the checks still rise, add 3 hours (`TIME_LIMIT` 36 to 39 hours), decided
 before hour 30.6 of the limit (otherwise the learning rate would go back to 0.0001 for a while; see `LATE_LEARNING_RATE`).
 
+**Reading at round 862 (19 November):** 21.04 of 36 hours used (130 s per round), about 597,000 new games.
+
+| rounds | points | openings worse / equal / better |
+|---|---|---|
+| 632 to 695 (8 checks) | 57.0% | 50 / 98 / 108 |
+| 696 to 759 (8 checks) | 57.4% | 46 / 101 / 109 |
+| 760 to 823 (8 checks) | 58.7% | 45 / 93 / 118 |
+| 824 to 856 (5 checks) | 58.1% | 43 / 103 / 110 |
+
+Measured: the points rise more slowly now (about +1 in 200 rounds, before +1 in 60), but the worse openings fall again,
+from about 50 to about 43, which is what the user's rule asks for. Policy loss 1.210 to 1.200, value loss 0.103 to
+0.100, ties in self-play 550 to 564: all signs of fewer mistakes in its own games. Best checks 60.3% (760) and 60.1%
+(784, 792). Guessed: 3 more hours at 0.0001 would add about half a point; the step to 0.00003 matters more.
+Decision (the user, 19 November): first add the 3 hours, then, with 42 units left at 21 hours (about 1.98 units per
+hour measured; the 39 hours would have left 1 to 2 units), **keep 36 hours** and use the units for tests on Colab.
+The step to 0.00003 stays at 30.6 hours, the end near round 1280. Kept from the change: once the late learning rate has
+begun (read from the log), it stays even if the limit is raised later, so the time of the restart does not matter.
+Tried on the laptop with the tiny final run: limit raised after the step, the rate stayed at 0.00003.
+
 Not proposed, and why: bigger network (size is not the limit yet); line layers (lost to large, 1.45 times
 slower); medium (2.3 times faster, but less room to grow over a long run; small showed the size cap);
 long-game lessons (no gain); more simulations (no gain); proofs of game ends in the search (traps are rare;

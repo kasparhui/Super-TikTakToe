@@ -792,10 +792,13 @@ def main():
 
     signal.signal(signal.SIGINT, stop)
     used = 0.0                          # self-play and learning time counted for TIME_LIMIT
+    late = False                        # the late learning rate has begun (it stays, even if TIME_LIMIT is raised)
     if TIME_LIMIT and os.path.exists(log_file):
         with open(log_file, newline='') as file:
-            used = sum(float(row.get('work_seconds') or 0) for row in csv.DictReader(file)
-                       if int(row['iteration']) > TIME_LIMIT[0])
+            counted = [row for row in csv.DictReader(file) if int(row['iteration']) > TIME_LIMIT[0]]
+        used = sum(float(row.get('work_seconds') or 0) for row in counted)
+        late = bool(LATE_LEARNING_RATE) and any(
+            row.get('learning_rate') and float(row['learning_rate']) == LATE_LEARNING_RATE[1] for row in counted)
 
     def time_over():
         return bool(TIME_LIMIT) and iteration >= TIME_LIMIT[0] and used >= TIME_LIMIT[1]
@@ -843,8 +846,8 @@ def main():
             steps = max(1, REPLAY_RATIO * stats['positions'] // BATCH_SIZE)
             rate = learning_rate(iteration)
             if LATE_LEARNING_RATE and TIME_LIMIT and iteration >= TIME_LIMIT[0] \
-                    and used >= LATE_LEARNING_RATE[0] * TIME_LIMIT[1]:
-                rate = LATE_LEARNING_RATE[1]
+                    and (late or used >= LATE_LEARNING_RATE[0] * TIME_LIMIT[1]):
+                rate, late = LATE_LEARNING_RATE[1], True
             for group in optimizer.param_groups:
                 group['lr'] = rate
             policy_loss, value_loss = train(model, optimizer, buffer, device, steps)
