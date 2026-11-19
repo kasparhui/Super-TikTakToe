@@ -203,6 +203,20 @@ The step to 0.00003 stays at 30.6 hours, the end near round 1280. Kept from the 
 begun (read from the log), it stays even if the limit is raised later, so the time of the restart does not matter.
 Tried on the laptop with the tiny final run: limit raised after the step, the rate stayed at 0.00003.
 
+**Reading at round 1021 (19 November):** 27.03 of 36 hours used, about 760,000 new games; rounds a little slower now
+(129 s to about 138 s). The step to 0.00003 comes near round 1115, the end near round 1250 (guessed).
+
+| rounds | points | openings worse / equal / better |
+|---|---|---|
+| 760 to 823 (8 checks) | 58.7% | 45 / 93 / 118 |
+| 824 to 887 (8 checks) | 58.7% | 41 / 105 / 110 |
+| 888 to 951 (8 checks) | 60.4% | 33 / 104 / 119 |
+| 952 to 1015 (8 checks) | 60.3% | 34 / 102 / 120 |
+
+Measured: the points level off at about 60%, but the worse openings fell clearly, from about 45 to about 33 of 256
+(best 20 at round 904): by the user's rule the network still improves, it makes fewer mistakes against large 240.
+Ties in self-play 554 to 572 of 1024, value loss about 0.099, policy loss 1.199 to 1.191.
+
 Not proposed, and why: bigger network (size is not the limit yet); line layers (lost to large, 1.45 times
 slower); medium (2.3 times faster, but less room to grow over a long run; small showed the size cap);
 long-game lessons (no gain); more simulations (no gain); proofs of game ends in the search (traps are rare;
