@@ -159,9 +159,10 @@ FINAL = {
     'SNAPSHOT_EVERY': 8, 'ARCHIVE': True,
     # Learning rate 0.0001, then 0.00003 from 85% of 36 hours of self-play and learning after iteration 279
     # (the start; it began at iteration 1120). First planned to end after the 36 hours (about iteration 1267);
-    # now it ends at iteration 1296 (a check and snapshot round). The time limit is raised to 40 hours only
-    # as a safety stop; the late learning rate stays, because it has begun.
-    'ITERATIONS': 1296, 'TIME_LIMIT': (279, 40 * 3600), 'LATE_LEARNING_RATE': (0.85, 3e-5),
+    # now it ends at iteration 1296 (a check and snapshot round). The time limit is raised to 48 hours only
+    # as a safety stop (the log also counts the rounds lost on 20 November); the late learning rate stays,
+    # because it has begun.
+    'ITERATIONS': 1296, 'TIME_LIMIT': (279, 48 * 3600), 'LATE_LEARNING_RATE': (0.85, 3e-5),
 }
 
 # Networks whose training uses other settings than the ones above; they are used when the network is

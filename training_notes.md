@@ -227,6 +227,18 @@ old code: it stops by itself at 36 hours (it saves the memory then); after that 
 cell continue it to 1296. Tried on the laptop with the tiny final run: stopped by time, then continued with a raised
 limit and a set end round; the rate stayed at 0.00003 and it stopped exactly at that round.
 
+**Lost rounds 1169 to 1260 (20 November):** Google Drive was full. The Colab machine stopped without a proper stop at
+round 1262 (35.8 hours); Drive had only the network of round 1168, because files are written to the machine and
+uploaded in the background, and with a full Drive the uploads fail without a message. The restart continued from
+1168; meanwhile the user freed space, after which the network and log of 1260 seemed to arrive, but the running
+restart overwrote the network with its rounds 1169 to 1173, and the 1260 file was not in Drive's trash. So the run
+continues from 1173; about 87 rounds (about 3.2 hours, about 6.5 units) are lost; snapshots 1176 to 1256 are missing.
+The log has the lost rows (1169 to 1260) and then the new ones; they are to be removed from it (they belong to a
+network that no longer exists). The end stays at 1296 (the user's decision, 10 units left, about 9.5 needed,
+guessed). The safety time limit is raised to 48 hours, because the log also counts the lost rounds (about 36 hours
+counted at the restart, plus about 4.5 hours to 1296 would have passed 40 hours near round 1285). Lesson: keep at
+least 3 GB free on Drive (the memory file of 1.6 GB is briefly there twice while it is saved).
+
 Not proposed, and why: bigger network (size is not the limit yet); line layers (lost to large, 1.45 times
 slower); medium (2.3 times faster, but less room to grow over a long run; small showed the size cap);
 long-game lessons (no gain); more simulations (no gain); proofs of game ends in the search (traps are rare;
