@@ -238,6 +238,14 @@ network that no longer exists). The end stays at 1296 (the user's decision, 10 u
 guessed). The safety time limit is raised to 48 hours, because the log also counts the lost rounds (about 36 hours
 counted at the restart, plus about 4.5 hours to 1296 would have passed 40 hours near round 1285). Lesson: keep at
 least 3 GB free on Drive (the memory file of 1.6 GB is briefly there twice while it is saved).
+Measured in the log (the user's copy at round 1179): the network on Drive was really of round 1167, so the restart
+began with round 1168 (the restart's start line said 1176 only after its short first part). The log had the old
+rows 1168 to 1222 (Drive's log had arrived only up to 1222) and then the new rows from 1168. Cleaned: the old rows
+are moved to `models/final/logs/alphazero_large_log_lost_1168_to_1222.csv`, the log is continuous again (1 to 1179).
+Drive's log is left as it is while the run goes on; the same cleaning is done again at the end. Checks against
+large 240 of the lost rounds 1168 to 1216 (7 checks): 62.6% on average, worse openings about 29; of the late
+rate's rounds kept, 1120 to 1176 (8 checks): 61.2%, worse openings about 32. Guessed: the difference is mostly
+chance (one check has 512 games, about +-2 points), but the lost rounds hint that the late rate still adds a little.
 
 Not proposed, and why: bigger network (size is not the limit yet); line layers (lost to large, 1.45 times
 slower); medium (2.3 times faster, but less room to grow over a long run; small showed the size cap);
