@@ -1,6 +1,6 @@
 # Training notes
 
-Last updated: 18 November 2026 (test results and the final run; shortened on 17 November; the long version with every check and interim reading is
+Last updated: 20 November 2026 (test results and the final run, now ending at round 1296; shortened on 17 November; the long version with every check and interim reading is
 in git, commit `00a719e`, and before that `7c4277a`).
 This file is the memory of the project's training decisions. It is kept up to date whenever something
 that influences the training changes.
@@ -216,6 +216,16 @@ Tried on the laptop with the tiny final run: limit raised after the step, the ra
 Measured: the points level off at about 60%, but the worse openings fell clearly, from about 45 to about 33 of 256
 (best 20 at round 904): by the user's rule the network still improves, it makes fewer mistakes against large 240.
 Ties in self-play 554 to 572 of 1024, value loss about 0.099, policy loss 1.199 to 1.191.
+
+**End moved to round 1296 (20 November, the user's decision, at about round 1262):** instead of stopping after 36
+hours (that would have been about round 1267), the run ends at round 1296, a round with a check and a snapshot.
+Measured from the log up to round 1222: 34.35 of 36 hours used, 130.5 s per round in the last 20 rounds; the late
+learning rate began at round 1120. Setting: `ITERATIONS` 1296 and `TIME_LIMIT` raised to 40 hours (only a safety
+stop, it is not reached); the late learning rate stays because it has begun. Guessed: about 30 rounds more than the
+36 hours, about 1.1 hours of work, about 1.3 hours with checks, about 2.5 units. The running process still has the
+old code: it stops by itself at 36 hours (it saves the memory then); after that a `git pull` and the same start
+cell continue it to 1296. Tried on the laptop with the tiny final run: stopped by time, then continued with a raised
+limit and a set end round; the rate stayed at 0.00003 and it stopped exactly at that round.
 
 Not proposed, and why: bigger network (size is not the limit yet); line layers (lost to large, 1.45 times
 slower); medium (2.3 times faster, but less room to grow over a long run; small showed the size cap);

@@ -157,9 +157,11 @@ FINAL = {
     'SAVE_BUFFER_EVERY': 10,                          # the memory is about 1.6 GB
     'REFERENCE': 'large', 'REFERENCE_ITERATION': 240, 'REFERENCE_EVERY': 8, 'REFERENCE_GAMES': 512,
     'SNAPSHOT_EVERY': 8, 'ARCHIVE': True,
-    # 36 hours of self-play and learning after iteration 279 (the start); learning rate 0.0001, then
-    # 0.00003 for the last 15% of that time
-    'ITERATIONS': 5000, 'TIME_LIMIT': (279, 36 * 3600), 'LATE_LEARNING_RATE': (0.85, 3e-5),
+    # Learning rate 0.0001, then 0.00003 from 85% of 36 hours of self-play and learning after iteration 279
+    # (the start; it began at iteration 1120). First planned to end after the 36 hours (about iteration 1267);
+    # now it ends at iteration 1296 (a check and snapshot round). The time limit is raised to 40 hours only
+    # as a safety stop; the late learning rate stays, because it has begun.
+    'ITERATIONS': 1296, 'TIME_LIMIT': (279, 40 * 3600), 'LATE_LEARNING_RATE': (0.85, 3e-5),
 }
 
 # Networks whose training uses other settings than the ones above; they are used when the network is
