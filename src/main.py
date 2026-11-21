@@ -17,7 +17,8 @@ from draw_game import drawGameState
 #                   'iterations'  random games per move (default 200000)
 #   'neural_net'  AlphaZero: tree search guided by the network trained with
 #                 train.py. Options:
-#                   'model'        'small', 'medium' or 'large' (default 'medium')
+#                   'model'        'small', 'medium', 'large' or 'final' (the final network in
+#                                  models/final/, the strongest; default 'medium')
 #                   'simulations'  positions the network looks at per move
 #                                  (default 400; more = stronger and slower)
 #   'random'      random moves

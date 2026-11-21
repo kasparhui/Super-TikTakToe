@@ -63,7 +63,16 @@ class all_AI:
             raise ValueError(f"Kein gültiger Modus: '{mode}'")
 
     def load_network(self, simulations = DEFAULT_SIMULATIONS):
-        model = Tic_Tac_Toe_NN.load_model(self.model_name, 'cpu')
+        if self.model_name == 'final':      # the final network (models/final/), a 'large' one
+            import os, torch
+            path = os.path.join(Tic_Tac_Toe_NN.MODEL_DIR, 'final', 'alphazero_large.pt')
+            if not os.path.exists(path):
+                raise FileNotFoundError(f'There is no final network at {path}.')
+            model = Tic_Tac_Toe_NN.create_model('large')
+            model.load_state_dict(torch.load(path, map_location='cpu')['model'])
+            model.eval()
+        else:
+            model = Tic_Tac_Toe_NN.load_model(self.model_name, 'cpu')
         self.neural_player = MCTS.NeuralPlayer(model, 'cpu', simulations)
 
     def best_nn_move(self, simulations = DEFAULT_SIMULATIONS):
