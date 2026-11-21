@@ -51,13 +51,17 @@ welchem kleinen Feld der Gegner als Nächstes spielen muss. Dadurch hängt jeder
 Stellung ab, und kurze Rechnungen reichen selten. Für die hier verwendeten Regeln ist das Spiel nicht
 gelöst.
 
-\paragraph{Vorgeschichte.} Das Spiel selbst und eine erste Computergegnerin entstanden im November und
-Dezember 2023: eine Minimax-Suche mit handgeschriebener Bewertung, die je nach Tiefe sehr stark spielt,
-aber pro Zug lange rechnet. Sie blieb im Projekt als \emph{Messgegner}: Gegen Minimax der Tiefen 12 bis 15
-lässt sich die Stärke eines Netzes von außen prüfen.
+\paragraph{Vorgeschichte.} Das Spiel samt Darstellung und eine erste Computergegnerin entstanden im
+November und Dezember 2023: eine Minimax-Suche mit handgeschriebener Bewertung. Schon damals folgte ein
+erster eigener AlphaZero-Versuch mit Netz, Monte-Carlo-Baumsuche und Selbstspiel, der einige hundert
+Runden trainiert wurde. Im November 2026 wurde beides überarbeitet: Die Minimax-Suche wurde als
+kompilierte, deutlich schnellere Fassung neu geschrieben, sodass sie in vertretbarer Zeit 12 bis 15 Züge
+tief rechnet, und der AlphaZero-Teil wurde vollständig neu geschrieben (Netz, Suche, Training). Minimax
+blieb im Projekt als \emph{Messgegner}: Gegen Minimax der Tiefen 12 bis 15 lässt sich die Stärke eines
+Netzes von außen prüfen.
 
-\paragraph{Ziel.} Im November 2026 kam der Teil hinzu, um den es hier geht: ein neuronales Netz, das nach
-dem Vorbild von AlphaZero~\cite{alphazero} nur aus eigenen Partien lernt. Zwei Vorgaben prägten die Arbeit.
+\paragraph{Ziel.} Um diesen neuen AlphaZero-Teil geht es hier: ein neuronales Netz, das nach dem Vorbild
+von AlphaZero~\cite{alphazero} nur aus eigenen Partien lernt. Zwei Vorgaben prägten die Arbeit.
 Erstens ein \emph{reines Netz}: keine Minimax-Hilfe im Spiel oder im Training. Zweitens ein Ziel, das über
 die Punktzahl hinausgeht: Das finale Netz soll \emph{wenige Fehler} machen. Ein Ergebnis von 50\,\%, bei
 dem beide Seiten auf denselben Eröffnungen mal gewinnen und mal verlieren, heißt, dass beide Fehler
@@ -390,15 +394,17 @@ Commits stammen die 39 aus den Jahren 2023 und 2024 von Kaspar Hui, ohne Claude.
 10.~November 2026 tragen den Vermerk \enquote{Co-Authored-By} von Claude (32 mit Claude Fable 5.2, 28 mit
 Claude Opus 5.5), gearbeitet wurde über Claude Code.
 
-\paragraph{Kaspar Hui} hat das Spiel samt Darstellung und die Minimax-Gegnerin (2023/2024) ohne Claude
-geschrieben. Im AlphaZero-Teil hat er die Ziele und Vorgaben gesetzt (reines Netz ohne Minimax, wenige
+\paragraph{Kaspar Hui} hat 2023/2024 ohne Claude das Spiel samt Darstellung, die Minimax-Gegnerin mit
+ihrer Bewertung und einen ersten eigenen AlphaZero-Versuch (Netz, Monte-Carlo-Baumsuche, Selbstspiel und
+Training) geschrieben. Im neuen AlphaZero-Teil hat er die Ziele und Vorgaben gesetzt (reines Netz ohne Minimax, wenige
 Fehler statt nur hoher Punktzahl, die Eröffnungsregel, Eröffnungen ohne Wiederholung, ein eigener Ordner für
 den finalen Lauf), über alle Läufe, Budgets und Abbrüche entschieden (etwa das Ende bei Runde 1296), die
 Trainings auf Google Colab gestartet und bezahlt, Dateien zwischen Colab, Drive und Laptop bewegt und die
 Ergebnisse geprüft und nachgefragt.
 
-\paragraph{Claude} hat den größten Teil des Codes für den AlphaZero-Teil geschrieben (Netze, Suche,
-Training, Speicher und Archiv, Test- und Auswertungsskripte, Colab-Notebooks), die meisten Versuche und
+\paragraph{Claude} hat ab November 2026 die Minimax-Suche als schnelle, kompilierte Fassung überarbeitet
+und den AlphaZero-Teil vollständig neu geschrieben (Netze, Suche, Training, Speicher und Archiv, Test- und
+Auswertungsskripte, Colab-Notebooks), die meisten Versuche und
 Messverfahren vorgeschlagen und mit Kaspar abgestimmt, die Logs gelesen und gedeutet, die Trainingsnotizen
 geführt, die Endspiele auf dem Laptop laufen lassen und dieses Papier samt Abbildungen und Diskussion
 entworfen. Die Lesarten in Abschnitt~\ref{sec:diskussion} und die mit \enquote{geschätzt} markierten Angaben sind Claudes
