@@ -22,7 +22,7 @@
 
 \title{Super-TikTakToe:\\ Ein selbstlernendes Netz für Ultimate Tic-Tac-Toe\\[0.3em]
 \large Rückblick, Ergebnisse und Diskussion}
-\author{Kaspar Hui}
+\author{Kaspar Hui\\[0.2em]\small unter Mitarbeit von Claude (Anthropic)}
 \date{21.~November 2026}
 
 \begin{document}
@@ -62,6 +62,10 @@ Erstens ein \emph{reines Netz}: keine Minimax-Hilfe im Spiel oder im Training. Z
 die Punktzahl hinausgeht: Das finale Netz soll \emph{wenige Fehler} machen. Ein Ergebnis von 50\,\%, bei
 dem beide Seiten auf denselben Eröffnungen mal gewinnen und mal verlieren, heißt, dass beide Fehler
 machen. Das Netz soll auf möglichst wenigen Eröffnungen schlechter spielen als sein Gegner.
+
+\paragraph{Mitarbeit einer KI.} Der hier beschriebene Teil des Projekts entstand in Zusammenarbeit mit
+Claude, einem KI-Assistenten von Anthropic. Wer was beigetragen hat, steht in
+Abschnitt~\ref{sec:beitrag}.
 
 \section{Methode}
 
@@ -112,8 +116,8 @@ einmal mit jeder Farbe. Ohne Zufall spielt dasselbe Paar aus derselben Stellung 
 \end{enumerate}
 
 \paragraph{Die Eröffnungsregel.} Für das Ziel \enquote{wenige Fehler} werden pro Eröffnung die Punkte beider
-Partien addiert (Sieg 1, Unentschieden $\tfrac12$). Unter 1 heißt: auf dieser Eröffnung schlechter
-gespielt als der Gegner; genau 1: gleich; über 1: besser. Diese Zählung trennt \enquote{viele Remis} von
+Partien addiert (Sieg 1, Unentschieden $\tfrac12$). Über 1 heißt: auf dieser Eröffnung besser
+gespielt als der Gegner; genau 1: gleich; unter 1: schlechter. Diese Zählung trennt \enquote{viele Remis} von
 \enquote{gleich viele Siege und Niederlagen}, die beide 50\,\% ergeben können.
 
 \paragraph{Eröffnungen ohne Wiederholung.} Das Brett hat acht Symmetrien. Zwei Eröffnungen, die durch
@@ -267,23 +271,23 @@ Einstellung. Als Maßstab spielte zusätzlich large 240 gegen medium 240 auf den
 \setlength{\tabcolsep}{5pt}
 \begin{tabular}{llrrr}
 \toprule
-Paar & Sim. & Punkte & S -- U -- N & Eröffn.\ schlechter / gleich / besser \\
+Paar & Sim. & Punkte & S -- U -- N & Eröffn.\ besser / gleich / schlechter \\
 \midrule
-final 1296 -- large 240 & 500  & 61{,}3\,\% & 170 -- 395 -- 35 & 22 / 144 / 134 \\
-                        & 2000 & 58{,}2\,\% & 122 -- 455 -- 23 & 19 / 173 / 108 \\
-                        & zus. & \textbf{59{,}8\,\%} & 292 -- 850 -- 58 & \textbf{41} / 317 / 242 \\
+final 1296 -- large 240 & 500  & 61{,}3\,\% & 170 -- 395 -- 35 & 134 / 144 / 22 \\
+                        & 2000 & 58{,}2\,\% & 122 -- 455 -- 23 & 108 / 173 / 19 \\
+                        & zus. & \textbf{59{,}8\,\%} & 292 -- 850 -- 58 & 242 / 317 / \textbf{41} \\
 \midrule
-final 1296 -- medium 240 & 500  & 64{,}0\,\% & 196 -- 376 -- 28 & 17 / 125 / 158 \\
-                         & 2000 & 64{,}2\,\% & 188 -- 395 -- 17 & 9 / 133 / 158 \\
-                         & zus. & \textbf{64{,}1\,\%} & 384 -- 771 -- 45 & \textbf{26} / 258 / 316 \\
+final 1296 -- medium 240 & 500  & 64{,}0\,\% & 196 -- 376 -- 28 & 158 / 125 / 17 \\
+                         & 2000 & 64{,}2\,\% & 188 -- 395 -- 17 & 158 / 133 / 9 \\
+                         & zus. & \textbf{64{,}1\,\%} & 384 -- 771 -- 45 & 316 / 258 / \textbf{26} \\
 \midrule
-large 240 -- medium 240 (Maßstab) & 500  & 53{,}4\,\% & 117 -- 407 -- 76 & 57 / 154 / 89 \\
-                                  & 2000 & 54{,}0\,\% & 98 -- 452 -- 50 & 35 / 179 / 86 \\
-                                  & zus. & 53{,}7\,\% & 215 -- 859 -- 126 & 92 / 333 / 175 \\
+large 240 -- medium 240 (Maßstab) & 500  & 53{,}4\,\% & 117 -- 407 -- 76 & 89 / 154 / 57 \\
+                                  & 2000 & 54{,}0\,\% & 98 -- 452 -- 50 & 86 / 179 / 35 \\
+                                  & zus. & 53{,}7\,\% & 215 -- 859 -- 126 & 175 / 333 / 92 \\
 \bottomrule
 \end{tabular}
 \caption{Direkte Partien. S -- U -- N: Siege, Unentschieden, Niederlagen des erstgenannten Netzes.
-Eröffnungen nach der Eröffnungsregel aus dessen Sicht (je 300).}
+Eröffnungen besser / gleich / schlechter nach der Eröffnungsregel aus dessen Sicht (je 300).}
 \label{tab:netze}
 \end{table}
 
@@ -305,17 +309,17 @@ Minimax-Test gespielt hatte; auf ihnen lassen sich beide direkt vergleichen.
 \setlength{\tabcolsep}{4pt}
 \begin{tabular}{llrrrr}
 \toprule
-Sim. & Tiefe & final 1296 & schlechter / gleich / besser & final, 53 Eröffn. & medium 132, 53 Eröffn. \\
+Sim. & Tiefe & final 1296 & besser / gleich / schlechter & final, 53 Eröffn. & medium 132, 53 Eröffn. \\
 \midrule
-500  & 13 & 88{,}0\,\% (163--33--8)  & 3 / 6 / 93   & 90{,}1\,\%, 0 / 2 / 51 & 73{,}1\,\%, 3 / 17 / 33 \\
-500  & 15 & 79{,}9\,\% (133--60--11) & 5 / 16 / 81  & 77{,}8\,\%, 3 / 9 / 41 & 62{,}3\,\%, 10 / 13 / 30 \\
-2000 & 13 & 94{,}1\,\% (182--20--2)  & 0 / 2 / 100  & 95{,}8\,\%, 0 / 1 / 52 & 84{,}9\,\%, 0 / 6 / 47 \\
-2000 & 15 & 88{,}2\,\% (159--42--3)  & 1 / 7 / 94   & 89{,}2\,\%, 0 / 4 / 49 & 75{,}5\,\%, 3 / 13 / 37 \\
+500  & 13 & 88{,}0\,\% (163--33--8)  & 93 / 6 / 3   & 90{,}1\,\%, 51 / 2 / 0 & 73{,}1\,\%, 33 / 17 / 3 \\
+500  & 15 & 79{,}9\,\% (133--60--11) & 81 / 16 / 5  & 77{,}8\,\%, 41 / 9 / 3 & 62{,}3\,\%, 30 / 13 / 10 \\
+2000 & 13 & 94{,}1\,\% (182--20--2)  & 100 / 2 / 0  & 95{,}8\,\%, 52 / 1 / 0 & 84{,}9\,\%, 47 / 6 / 0 \\
+2000 & 15 & 88{,}2\,\% (159--42--3)  & 94 / 7 / 1   & 89{,}2\,\%, 49 / 4 / 0 & 75{,}5\,\%, 37 / 13 / 3 \\
 \midrule
-\multicolumn{2}{l}{zusammen} & \textbf{87{,}6\,\%} (637--155--24) & \textbf{9} / 31 / 368 & & \\
+\multicolumn{2}{l}{zusammen} & \textbf{87{,}6\,\%} (637--155--24) & 368 / 31 / \textbf{9} & & \\
 \bottomrule
 \end{tabular}
-\caption{Partien gegen Minimax, 204 pro Zeile (auf den 53 gemeinsamen Eröffnungen 106).}
+\caption{Partien gegen Minimax, 204 pro Zeile (auf den 53 gemeinsamen Eröffnungen 106). Eröffnungen besser / gleich / schlechter aus Sicht des Netzes.}
 \label{tab:minimax}
 \end{table}
 
@@ -324,6 +328,7 @@ selbst gegen Tiefe 15 nur auf einer von 102 Eröffnungen schlechter (Tabelle~\re
 denselben Eröffnungen holt es 11 bis 17 Punkte mehr als medium 132 und verliert etwa dreimal seltener.
 
 \section{Diskussion}
+\label{sec:diskussion}
 
 \paragraph{Was geholfen hat.} Der wichtigste Befund des Projekts ist schlicht: \emph{Partien}. Größe,
 Aufbau, zusätzliche Lektionen und tiefere Suche brachten bei gleicher Datenmenge kaum etwas; frische
@@ -376,6 +381,34 @@ Checks gegen ein drittes Netz zu beurteilen. Das Linien-Netz etwa führte in den
 verlor trotzdem direkt gegen large. Ebenso nützlich war die Eröffnungsregel: Sie zeigte, dass der
 Fortschritt im finalen Lauf zeitweise nur aus gleichen Eröffnungen kam, die zu besseren wurden, und erst
 später aus weniger Fehlern.
+
+\section{Arbeitsteilung und Beitrag von Claude}
+\label{sec:beitrag}
+
+Dieser Abschnitt legt offen, wie das Projekt entstanden ist. Grundlage ist die Git-Geschichte: Von 99
+Commits stammen die 39 aus den Jahren 2023 und 2024 von Kaspar Hui, ohne Claude. Alle 60 Commits ab dem
+10.~November 2026 tragen den Vermerk \enquote{Co-Authored-By} von Claude (32 mit Claude Fable 5.2, 28 mit
+Claude Opus 5.5), gearbeitet wurde über Claude Code.
+
+\paragraph{Kaspar Hui} hat das Spiel samt Darstellung und die Minimax-Gegnerin (2023/2024) ohne Claude
+geschrieben. Im AlphaZero-Teil hat er die Ziele und Vorgaben gesetzt (reines Netz ohne Minimax, wenige
+Fehler statt nur hoher Punktzahl, die Eröffnungsregel, Eröffnungen ohne Wiederholung, ein eigener Ordner für
+den finalen Lauf), über alle Läufe, Budgets und Abbrüche entschieden (etwa das Ende bei Runde 1296), die
+Trainings auf Google Colab gestartet und bezahlt, Dateien zwischen Colab, Drive und Laptop bewegt und die
+Ergebnisse geprüft und nachgefragt.
+
+\paragraph{Claude} hat den größten Teil des Codes für den AlphaZero-Teil geschrieben (Netze, Suche,
+Training, Speicher und Archiv, Test- und Auswertungsskripte, Colab-Notebooks), die meisten Versuche und
+Messverfahren vorgeschlagen und mit Kaspar abgestimmt, die Logs gelesen und gedeutet, die Trainingsnotizen
+geführt, die Endspiele auf dem Laptop laufen lassen und dieses Papier samt Abbildungen und Diskussion
+entworfen. Die Lesarten in Abschnitt~\ref{sec:diskussion} und die mit \enquote{geschätzt} markierten Angaben sind Claudes
+Einschätzungen.
+
+\paragraph{Was das für die Ergebnisse heißt.} Alle Zahlen stammen aus den Logs und Ergebnisdateien im
+Repository und lassen sich mit den Skripten dort nachrechnen. Eine unabhängige Prüfung durch Dritte gab es
+nicht. Weil Code, Auswertung und Text zu großen Teilen von derselben KI stammen, könnten sich Fehler durch
+alle drei ziehen; Kaspars Rückfragen und das Festlegen von Regeln vor den Läufen sollten das begrenzen, können
+es aber nicht ausschließen.
 
 \section{Fazit}
 
