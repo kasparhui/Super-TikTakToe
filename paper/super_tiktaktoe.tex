@@ -370,14 +370,9 @@ gedreht wird, nicht durch den Aufbau erzwungen. Ein billiger, nicht getesteter G
 bei jeder Netzabfrage in der Suche zufällig zu drehen, wie AlphaGo Zero~\cite{alphagozero} und
 KataGo~\cite{katago} es tun: Die kleinen Fehler mitteln sich dann über die vielen Simulationen heraus.
 
-\paragraph{Was offen bleibt.}
-\begin{itemize}
-\item Gewichtsmittelung der letzten Snapshots (sie liegen nur auf Drive).
-\item Zufällige Drehung in der Suche (siehe oben), testbar ohne neues Training.
-\item large 240 gegen Minimax als direkter Maßstab.
-\item Ein größeres Netz, trainiert aus dem Archiv der rund einer Million gespeicherten Partien. Für large
-kostete ein solcher Lauf auf der L4 etwa drei Stunden, für ein größeres Netz entsprechend mehr; er würde zeigen, ob Größe bei dieser Datenmenge nun hilft.
-\end{itemize}
+\paragraph{Was offen bleibt.} Offen sind vor allem Wege zu einem noch stärkeren Netz; sie sind in
+Abschnitt~\ref{sec:ausblick} gesammelt. Als Messung fehlt noch large 240 gegen Minimax auf denselben
+Eröffnungen, als direkter Maßstab für den Minimax-Vergleich.
 
 \paragraph{Zur Arbeitsweise.} Hilfreich war, Entscheidungsregeln \emph{vor} einem Lauf festzulegen
 (Schwellen von 53\,\% bzw.\ 48\,\%, Stopp-Regeln) und Netze nach direkten Partien statt nach Verlusten oder
@@ -385,6 +380,75 @@ Checks gegen ein drittes Netz zu beurteilen. Das Linien-Netz etwa führte in den
 verlor trotzdem direkt gegen large. Ebenso nützlich war die Eröffnungsregel: Sie zeigte, dass der
 Fortschritt im finalen Lauf zeitweise nur aus gleichen Eröffnungen kam, die zu besseren wurden, und erst
 später aus weniger Fehlern.
+
+\section{Ausblick: Wege zu einem noch besseren Netz}
+\label{sec:ausblick}
+
+Die folgenden Schritte sind nach erwartetem Nutzen pro Aufwand geordnet. Alle Angaben zu Nutzen und
+Kosten sind Schätzungen; gemessen ist davon noch nichts.
+
+\subsection{Ohne neues Training}
+
+\begin{enumerate}
+\item \textbf{Zufällige Drehung in der Suche.} Bei jeder Netzabfrage die Stellung zufällig drehen oder
+spiegeln und die Antwort zurückdrehen, wie AlphaGo Zero und KataGo. Kostet keine Rechenzeit, und die
+kleinen Asymmetrien des Netzes (Abschnitt~\ref{sec:diskussion}) mitteln sich über die Simulationen heraus.
+Erwartet: ein bis einige Prozentpunkte. Test: finales Netz mit und ohne gegeneinander, etwa
+40~Minuten auf dem Laptop.
+\item \textbf{Gewichtsmittelung} der letzten Snapshots (etwa Runden 1264 bis 1296). Wirkt wie eine noch
+kleinere Lernrate, oft ein kleiner, aber kostenloser Gewinn. Braucht nur die Snapshots von Drive.
+\item \textbf{Suche beim Spielen abstimmen:} $c_\text{puct}$ und die Bewertung noch nicht besuchter Züge
+für lange Bedenkzeit neu einstellen und, falls nicht schon der Fall, den Suchbaum zwischen den Zügen
+weiterverwenden. Kleine Gewinne bei fester Bedenkzeit.
+\end{enumerate}
+
+\subsection{Mit dem gespeicherten Archiv}
+
+Das Archiv enthält rund eine Million Partien des finalen Laufs mit allen Lektionen. Ein neues Netz daraus
+zu lernen kostet nur Stunden statt Tage und erlaubt faire Vergleiche auf genau denselben Daten:
+
+\begin{enumerate}\setcounter{enumi}{3}
+\item \textbf{Ein größeres Netz} (zum Beispiel 128 Kanäle, 10 Blöcke, etwa 2{,}2-mal so viel Rechnung pro
+Stellung) zuerst aus dem Archiv lernen und dann im direkten Spiel mit dem finalen Netz vergleichen. Die
+flachen Kurven am Ende des finalen Laufs deuten darauf hin, dass large jetzt an seine Grenze kommt; mit
+so vielen Partien könnte sich Größe erstmals lohnen. Nur wenn das größere Netz vorne liegt, lohnt sich ein
+eigener Selbstspiel-Lauf damit.
+\item \textbf{Netzaufbau erneut prüfen.} Die Linien-Schichten lernten pro Lektion doppelt so schnell, ihr
+Vorsprung schrumpfte aber mit mehr Lernen. Auf einer Million Partien lässt sich klären, ob davon etwas
+bleibt, ohne einen teuren Selbstspiel-Lauf.
+\end{enumerate}
+
+\subsection{Bessere Partien pro Rechenzeit}
+
+Mehr Partien waren der einzige verlässliche Hebel. Ein weiterer Lauf sollte deshalb vor allem mehr
+\emph{gute} Partien pro Stunde erzeugen:
+
+\begin{enumerate}\setcounter{enumi}{5}
+\item \textbf{Drehung in der Suche auch im Selbstspiel} (Punkt~1): bessere Lektionen ohne Mehrkosten.
+\item \textbf{Weitere Tricks von KataGo}~\cite{katago}: \enquote{forced playouts} mit Bereinigung der
+Lernziele und eine Hilfsvorhersage der nächsten Züge. Der Trick mit der vollen Suche auf nur einem Teil
+der Züge (\emph{fast\_moves}) half hier nicht; ein größerer Anteil voller Suchen wäre ein weiterer Versuch.
+\item \textbf{Rechenzeit:} Der Netzteil braucht über 90\,\% der Zeit. Schnellere Abfragen (etwa TensorRT,
+geschätzt 1{,}2- bis 1{,}5-mal) bedeuten direkt mehr Partien.
+\item \textbf{Längerer Lauf mit dem besseren Netz} aus Punkt~4 oder 5, wieder mit kleiner Lernrate am
+Ende und Gewichtsmittelung. Zum Vergleich: AlphaZero hatte im Schach 44~Millionen Partien, das finale Netz
+gut 1{,}2~Millionen.
+\end{enumerate}
+
+\subsection{Besser messen}
+
+\begin{enumerate}\setcounter{enumi}{9}
+\item \textbf{Ein starker externer Gegner} (etwa die vollständige uttt.ai-Engine oder starke Programme von
+CodinGame), um die Stärke außerhalb des eigenen Projekts einzuordnen.
+\item \textbf{Fehleranalyse mit Minimax:} In den wenigen verlorenen oder schlechteren Eröffnungen mit tiefer
+Minimax-Suche prüfen, welcher Zug der Fehler war. Das zeigt, ob die Fehler im Mittelspiel, im Endspiel
+oder in bestimmten Stellungstypen liegen, und damit, welcher der obigen Punkte am ehesten hilft.
+\end{enumerate}
+
+\paragraph{Nicht empfohlen} sind, nach den bisherigen Versuchen, mehr Simulationen im Training und
+zusätzliche Lektionen über den Spielverlauf (beide ohne messbaren Gewinn). Eine exakte Endspiel-Rechnung in
+der Suche (\enquote{MCTS-Solver}) könnte die letzten Verluste gegen Minimax verringern, widerspricht aber
+der Vorgabe eines reinen Netzes und wäre daher nur als eigene Variante sinnvoll.
 
 \section{Arbeitsteilung und Beitrag von Claude}
 \label{sec:beitrag}
