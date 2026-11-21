@@ -1,0 +1,399 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[ngerman]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{csquotes}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{amsmath}
+\usepackage{xcolor}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.17, /pgf/number format/1000 sep={}}
+\usepackage[hidelinks]{hyperref}
+\usepackage{caption}
+\captionsetup{font=small,labelfont=bf}
+
+\definecolor{blau}{HTML}{2A78D6}
+\definecolor{rot}{HTML}{E34948}
+\definecolor{grau}{HTML}{888780}
+
+\title{Super-TikTakToe:\\ Ein selbstlernendes Netz für Ultimate Tic-Tac-Toe\\[0.3em]
+\large Rückblick, Ergebnisse und Diskussion}
+\author{Kaspar Hui}
+\date{21.~November 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+Dieses Papier fasst ein Freizeitprojekt zusammen: ein Programm, das Ultimate Tic-Tac-Toe nach dem Vorbild von
+AlphaZero allein durch Spiele gegen sich selbst lernt, ohne menschliches Wissen und ohne Minimax im Spiel.
+Nach einer Reihe von Versuchen zu Netzgröße, Netzaufbau, Trainingseinstellungen und Suche zeigte sich ein
+klares Muster: Fast alle Änderungen endeten auf demselben Niveau, und nur \emph{mehr Partien} brachten
+messbar mehr Stärke, sofern das Netz groß genug war. Das finale Netz (1{,}84 Millionen Gewichte) wurde
+deshalb mit gut einer Million zusätzlicher Partien weitertrainiert. In Endspielen auf 300 verschiedenen
+Eröffnungen erreicht es gegen das bisher beste Netz (\emph{large 240}) 61{,}3\,\% bei 500 und 58{,}2\,\% bei
+2000 Simulationen pro Zug und ist nur in 22 bzw.\ 19 von 300 Eröffnungen schlechter. Gegen eine
+Minimax-Suche der Tiefe 15 gewinnt es mit 2000 Simulationen 88{,}2\,\% der Punkte und ist nur in einer
+von 102 Eröffnungen schlechter.
+\end{abstract}
+
+\section{Einleitung}
+
+\paragraph{Das Spiel.} Ultimate Tic-Tac-Toe besteht aus neun kleinen Tic-Tac-Toe-Feldern, die zusammen ein
+großes Feld bilden. Wer ein kleines Feld gewinnt, besetzt das entsprechende Feld des großen Bretts; wer
+drei davon in einer Reihe hat, gewinnt. Die Besonderheit: Das Feld, in das man setzt, bestimmt, in
+welchem kleinen Feld der Gegner als Nächstes spielen muss. Dadurch hängt jeder Zug von der ganzen
+Stellung ab, und kurze Rechnungen reichen selten. Für die hier verwendeten Regeln ist das Spiel nicht
+gelöst.
+
+\paragraph{Vorgeschichte.} Das Spiel selbst und eine erste Computergegnerin entstanden im November und
+Dezember 2023: eine Minimax-Suche mit handgeschriebener Bewertung, die je nach Tiefe sehr stark spielt,
+aber pro Zug lange rechnet. Sie blieb im Projekt als \emph{Messgegner}: Gegen Minimax der Tiefen 12 bis 15
+lässt sich die Stärke eines Netzes von außen prüfen.
+
+\paragraph{Ziel.} Im November 2026 kam der Teil hinzu, um den es hier geht: ein neuronales Netz, das nach
+dem Vorbild von AlphaZero~\cite{alphazero} nur aus eigenen Partien lernt. Zwei Vorgaben prägten die Arbeit.
+Erstens ein \emph{reines Netz}: keine Minimax-Hilfe im Spiel oder im Training. Zweitens ein Ziel, das über
+die Punktzahl hinausgeht: Das finale Netz soll \emph{wenige Fehler} machen. Ein Ergebnis von 50\,\%, bei
+dem beide Seiten auf denselben Eröffnungen mal gewinnen und mal verlieren, heißt, dass beide Fehler
+machen. Das Netz soll auf möglichst wenigen Eröffnungen schlechter spielen als sein Gegner.
+
+\section{Methode}
+
+\subsection{Lernen durch Selbstspiel}
+
+Das Verfahren folgt AlphaZero. Ein Netz schaut auf eine Stellung (sechs Bildebenen von $9\times9$
+Feldern: eigene Steine, gegnerische Steine, erlaubte Züge, entschiedene Felder und Ähnliches) und gibt
+zwei Dinge zurück: eine Verteilung über die 81 möglichen Züge (\emph{Policy}) und eine Einschätzung, wie
+die Partie ausgeht (\emph{Value}, von $-1$ bis $+1$). Eine Monte-Carlo-Baumsuche (PUCT, $c_\text{puct}=1{,}5$)
+fragt das Netz in jeder Simulation und wählt am Ende den meistbesuchten Zug.
+
+Jede Trainingsrunde besteht aus zwei Teilen: Zuerst spielt das aktuelle Netz viele Partien gegen sich
+selbst (512 bis 1024 gleichzeitig). Die Stellungen kommen mit den Besuchszahlen der Suche und dem
+Ausgang der Partie in einen Speicher. Dann lernt das Netz aus Stichproben dieses Speichers, die
+Besuchszahlen und den Ausgang vorherzusagen. Jede Stichprobe wird zufällig mit einer der acht
+Symmetrien des Bretts (Drehen, Spiegeln) gedreht. Die Lernrate sinkt in Stufen.
+
+\subsection{Netze}
+
+Alle Netze sind Residual-Netze aus Faltungsschichten in drei Größen:
+
+\begin{center}
+\begin{tabular}{lrrr}
+\toprule
+Netz & Kanäle & Blöcke & Gewichte \\
+\midrule
+small  & 32 & 4 & 0{,}19 Mio. \\
+medium & 64 & 6 & 0{,}67 Mio. \\
+large  & 96 & 8 & 1{,}84 Mio. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent Trainiert wurde auf Google Colab (Grafikkarte L4), Endspiele und Auswertungen liefen auf einem
+MacBook Air.
+
+\subsection{Messen}
+
+Gemessen wurde auf drei Arten:
+
+\begin{enumerate}
+\item \textbf{Checks während des Trainings:} alle 4 bzw.\ 8 Runden 256 oder 512 Partien gegen ein festes
+Vergleichsnetz mit 100 Simulationen pro Zug. Schnell, aber sie überschätzen den Unterschied bei längerer
+Bedenkzeit um 2 bis 4 Punkte.
+\item \textbf{Direkte Partien} zwischen fertigen Netzen mit 500 und 2000 Simulationen, jede Eröffnung
+einmal mit jeder Farbe. Ohne Zufall spielt dasselbe Paar aus derselben Stellung immer dieselbe Partie.
+\item \textbf{Partien gegen Minimax} der Tiefen 13 und 15.
+\end{enumerate}
+
+\paragraph{Die Eröffnungsregel.} Für das Ziel \enquote{wenige Fehler} werden pro Eröffnung die Punkte beider
+Partien addiert (Sieg 1, Unentschieden $\tfrac12$). Unter 1 heißt: auf dieser Eröffnung schlechter
+gespielt als der Gegner; genau 1: gleich; über 1: besser. Diese Zählung trennt \enquote{viele Remis} von
+\enquote{gleich viele Siege und Niederlagen}, die beide 50\,\% ergeben können.
+
+\paragraph{Eröffnungen ohne Wiederholung.} Das Brett hat acht Symmetrien. Zwei Eröffnungen, die durch
+Drehen oder Spiegeln ineinander übergehen, sind dieselbe Stellung. Die früher verwendeten 128 zufälligen
+Eröffnungen enthielten nur 71 verschiedene Stellungen. Für die Endspiele wurden daher alle 102
+verschiedenen Eröffnungen mit zwei Zügen und 198 der 822 verschiedenen mit drei Zügen verwendet, zusammen
+300, jede von beiden Seiten gespielt.
+
+\paragraph{Zufall.} Zwei Trainingsläufe mit identischen Einstellungen (\emph{large} und \emph{large\_repeat})
+lagen nach 100 Runden etwa 3 Punkte auseinander. Ein Unterschied zwischen zwei Varianten zählt deshalb
+erst ab etwa 4 Punkten über viele Checks; die Schwelle wurde jeweils vor einem Lauf festgelegt.
+
+\section{Die Versuche vor dem finalen Lauf}
+
+Tabelle~\ref{tab:versuche} fasst die Versuche zusammen. Gemeinsam ist fast allen: Sie endeten auf etwa
+demselben Niveau.
+
+\begin{table}[ht]
+\centering
+\small
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{4.6cm}X}
+\toprule
+Versuch & Ergebnis \\
+\midrule
+Größeres Netz (large statt medium), 240 Runden, 123\,000 Partien
+ & Gegen medium 240 direkt nur 52{,}3\,\% (500 Sim.) bzw.\ 50{,}0\,\% (2000 Sim.). Die Größe allein half nicht. \\
+Netzaufbau (acht Varianten D0--D8, gelernt aus den Stellungen von large)
+ & \enquote{Linien-Schichten} (Summen entlang der 72 kleinen und 8 großen Linien) lernen etwa doppelt so schnell pro Lektion. \\
+Linien-Netz selbst trainiert (\emph{large\_lines})
+ & Führte in den Checks gegen medium (56{,}0\,\% gegen 51{,}1\,\%), verlor aber direkt gegen large (46{,}9\,\% / 47{,}7\,\%) und war 1{,}4- bis 1{,}5-mal langsamer. \\
+Lektionen über den langen Spielverlauf (Besitzer der Felder, Ausgang als drei Wahrscheinlichkeiten, Zugwerte)
+ & 0 bis 3 Punkte, innerhalb des Zufalls. \\
+Kleines Netz mit vielen Partien (\emph{small\_many}, 215\,000 Partien)
+ & Pro Stunde etwa gleichauf mit large, pro Partie weit zurück, flacht tiefer ab. Nach Stopp-Regel abgebrochen (43{,}7\,\% statt nötiger 48\,\%). \\
+Doppelte Simulationen (800 statt 400)
+ & Kein messbarer Gewinn (52{,}8\,\% gegen 52{,}7\,\%). \\
+Doppelt so viele Partien pro Runde (\emph{more\_games})
+ & $+2{,}4$ Punkte, selbst bei der kleinsten Lernrate. Der einzige Hebel, der deutlich half. \\
+Suchparameter $c_\text{puct}$
+ & Kleinere Werte helfen nur bei kurzer Bedenkzeit; 1{,}5 blieb. \\
+Vergleich mit dem Netz von uttt.ai
+ & medium spielte mit gleicher Suche ausgeglichen (47{,}0\,\% / 50{,}6\,\%). \\
+\bottomrule
+\end{tabularx}
+\caption{Versuche vor dem finalen Lauf (Sim. = Simulationen pro Zug).}
+\label{tab:versuche}
+\end{table}
+
+\paragraph{Lesart.} medium und large endeten bei gleich vielen Partien gleichauf; die Linien-Schichten
+lernten schneller, endeten aber ebenfalls dort; Lektionen und tiefere Suche brachten nichts Messbares.
+Frische Partien dagegen halfen. Der Schluss: Die Netze waren durch die \emph{Zahl der Partien} begrenzt,
+nicht durch Größe oder Aufbau, solange das Netz nicht zu klein ist. Zum Vergleich: large hatte etwa
+123\,000 Partien gesehen, AlphaZero im Schach 44 Millionen.
+
+\paragraph{Zwei Tests für den finalen Lauf.} Mit je 5\,600\,s Rechenzeit wurden zwei Wege zu mehr Partien
+pro Stunde verglichen: \emph{sims\_200} (200 statt 400 Simulationen pro Zug, etwa 1{,}7-mal so viele
+Partien) und \emph{fast\_moves} (der Trick von KataGo~\cite{katago}: volle Suche nur auf einem Viertel der
+Züge). Gegen \emph{more\_games} Runde 260 erreichte \emph{sims\_200} 56{,}8\,\% und bestand die vorher
+gesetzte Schwelle von 53\,\%; \emph{fast\_moves} kam auf 51{,}8\,\%. Mehr Partien mit etwas flacherer
+Suche schlugen also mehr Suche pro Partie.
+
+\section{Der finale Lauf}
+
+\paragraph{Einstellungen.} large wurde ab \emph{sims\_200} Runde 279 weitertrainiert: 1024 Partien pro
+Runde, alle gleichzeitig, 200 Simulationen pro Zug, jede Stellung im Mittel zweimal gelernt, Speicher
+1{,}5 Millionen Stellungen (etwa 28 Runden), Lernrate 0{,}0001 und für die letzten 15\,\% der Zeit
+0{,}00003. Alle 8 Runden ein Check gegen \emph{large 240} (512 Partien, 100 Simulationen) und ein Snapshot.
+Alle Partien wurden in kompakter Form archiviert, sodass sich das Training später wiederholen ließe.
+
+\paragraph{Umfang.} Der Lauf endete bei Runde 1296: 1\,017 Runden, etwa 1\,041\,000 neue Partien, 37{,}3
+Stunden Selbstspiel und Lernen (38{,}6 mit den Checks), also etwa achtmal so viele Partien wie der
+ursprüngliche large-Lauf. Insgesamt hat das finale Netz gut 1{,}2 Millionen Partien gesehen.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  width=0.96\textwidth, height=6.2cm,
+  xlabel={Runde}, ylabel={Punkte gegen large 240 (\%)},
+  xmin=270, xmax=1305, ymin=48, ymax=66,
+  grid=major, grid style={gray!20},
+  legend pos=south east, legend style={font=\small, draw=none, fill=white, fill opacity=0.8},
+  tick label style={font=\small}, label style={font=\small},
+]
+\fill[blau!8] (axis cs:1120,48) rectangle (axis cs:1305,66);
+\addplot[only marks, mark=*, mark size=1.1pt, color=grau] coordinates {
+(280,51.0) (288,50.4) (296,51.1) (304,51.4) (312,52.6) (320,52.9) (328,54.6) (336,50.5) (344,53.8) (352,58.2) (360,53.0) (368,52.5) (376,54.4) (384,55.0) (392,54.9) (400,53.4) (408,56.1) (416,51.7) (424,54.6) (432,54.0) (440,56.3) (448,54.0) (456,56.2) (464,58.9) (472,52.0) (480,56.0) (488,54.2) (496,57.1) (504,58.1) (512,55.4) (520,55.1) (528,56.2) (536,55.6) (544,57.2) (552,56.7) (560,55.0) (568,56.5) (576,55.5) (584,57.5) (592,56.2) (600,58.0) (608,56.9) (616,59.8) (624,57.7) (632,55.3) (640,56.3) (648,58.0) (656,58.0) (664,56.6) (672,58.3) (680,54.6) (688,58.5) (696,57.0) (704,58.2) (712,57.7) (720,57.3) (728,56.9) (736,58.0) (744,58.1) (752,55.6) (760,60.3) (768,57.8) (776,59.6) (784,60.1) (792,60.1) (800,57.9) (808,57.0) (816,56.9) (824,57.9) (832,56.9) (840,58.3) (848,59.5) (856,58.1) (864,60.6) (872,58.6) (880,59.9) (888,60.6) (896,61.8) (904,63.4) (912,58.1) (920,60.6) (928,57.7) (936,60.3) (944,60.6) (952,60.4) (960,59.6) (968,58.9) (976,61.2) (984,60.4) (992,59.3) (1000,61.3) (1008,60.9) (1016,59.3) (1024,59.8) (1032,56.9) (1040,60.5) (1048,58.8) (1056,60.6) (1064,60.9) (1072,60.5) (1080,59.9) (1088,61.6) (1096,60.8) (1104,61.1) (1112,61.7) (1120,60.5) (1128,61.4) (1136,61.4) (1144,62.2) (1152,61.1) (1160,61.4) (1168,60.2) (1176,61.4) (1184,63.4) (1192,62.7) (1200,61.7) (1208,62.2) (1216,62.5) (1224,62.6) (1232,60.9) (1240,63.7) (1248,60.5) (1256,61.9) (1264,62.2) (1272,61.8) (1280,62.1) (1288,62.3) (1296,62.1)
+};
+\addlegendentry{Check (512 Partien)}
+\addplot[thick, color=blau] coordinates {
+(296,51.3) (348,53.7) (408,54.2) (468,55.6) (532,56.2) (596,57.3) (664,57.0) (728,57.4) (792,58.7) (856,58.7) (920,60.4) (984,60.3) (1048,59.7) (1100,61.0) (1148,61.2) (1208,62.5) (1268,61.9)
+};
+\addlegendentry{Mittel über Blöcke von 5--8 Checks}
+\node[font=\small, anchor=north east, text=blau] at (axis cs:1300,65.5) {Lernrate 0{,}00003};
+\end{axis}
+\end{tikzpicture}
+\caption{Checks des finalen Laufs gegen large 240 (100 Simulationen pro Zug). Ein einzelner Check schwankt
+um etwa $\pm2$ Punkte. Der blaue Bereich ab Runde 1120 ist die kleine Lernrate.}
+\label{fig:punkte}
+\end{figure}
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  width=0.96\textwidth, height=5.4cm,
+  xlabel={Runde}, ylabel={schlechtere Eröffnungen (von 256)},
+  xmin=270, xmax=1305, ymin=10, ymax=80,
+  grid=major, grid style={gray!20},
+  tick label style={font=\small}, label style={font=\small},
+]
+\fill[blau!8] (axis cs:1120,10) rectangle (axis cs:1305,80);
+\addplot[only marks, mark=*, mark size=1.1pt, color=grau] coordinates {
+(280,67) (288,74) (296,60) (304,65) (312,59) (320,59) (328,56) (336,70) (344,48) (352,40) (360,67) (368,67) (376,54) (384,56) (392,42) (400,55) (408,47) (416,73) (424,53) (432,55) (440,42) (448,44) (456,51) (464,39) (472,60) (480,43) (488,59) (496,39) (504,45) (512,60) (520,51) (528,54) (536,49) (544,50) (552,47) (560,50) (568,53) (576,58) (584,44) (592,51) (600,51) (608,56) (616,38) (624,54) (632,58) (640,47) (648,46) (656,51) (664,53) (672,45) (680,57) (688,44) (696,53) (704,48) (712,35) (720,42) (728,47) (736,45) (744,49) (752,51) (760,41) (768,46) (776,46) (784,43) (792,44) (800,48) (808,49) (816,43) (824,41) (832,55) (840,41) (848,37) (856,41) (864,34) (872,43) (880,32) (888,41) (896,28) (904,20) (912,41) (920,30) (928,41) (936,35) (944,30) (952,24) (960,35) (968,42) (976,42) (984,28) (992,36) (1000,28) (1008,34) (1016,30) (1024,33) (1032,53) (1040,34) (1048,39) (1056,30) (1064,40) (1072,35) (1080,36) (1088,35) (1096,33) (1104,30) (1112,32) (1120,33) (1128,32) (1136,31) (1144,30) (1152,39) (1160,23) (1168,29) (1176,36) (1184,29) (1192,26) (1200,44) (1208,32) (1216,36) (1224,30) (1232,31) (1240,26) (1248,38) (1256,33) (1264,34) (1272,37) (1280,36) (1288,34) (1296,38)
+};
+\addplot[thick, color=rot] coordinates {
+(296,65) (348,58) (408,54) (468,47) (532,51) (596,51) (664,50) (728,46) (792,45) (856,41) (920,33) (984,34) (1048,37) (1100,33) (1148,32) (1208,32) (1268,36)
+};
+\end{axis}
+\end{tikzpicture}
+\caption{Eröffnungen, auf denen das trainierte Netz in den Checks schlechter spielte als large 240 (von 256;
+rote Linie: Mittel über Blöcke). Die Fehler gingen bis etwa Runde 950 deutlich zurück und blieben dann bei
+etwa 32 bis 36.}
+\label{fig:schlechter}
+\end{figure}
+
+\paragraph{Verlauf.} Abbildung~\ref{fig:punkte} zeigt die Punkte, Abbildung~\ref{fig:schlechter} die
+schlechteren Eröffnungen. Nach einem Plateau um Runde 400 stiegen die Punkte stetig, etwa um einen Punkt
+alle 60 Runden, später langsamer, bis auf rund 60\,\% um Runde 900. Die Zahl der schlechteren Eröffnungen
+blieb zwischen Runde 440 und 650 bei etwa 50 stehen (der Gewinn kam damals aus gleichen Eröffnungen, die
+zu besseren wurden) und fiel danach bis Runde 950 auf etwa 33. Die kleine Lernrate ab Runde 1120 hob die
+Punkte noch einmal um etwa 2 auf rund 62\,\%, die schlechteren Eröffnungen aber nicht weiter. Auch die
+Verluste und der Anteil Remis im Selbstspiel blieben ab etwa Runde 1000 flach.
+
+\paragraph{Zwischenfälle.} Zwei Dinge kosteten Zeit. Erstens war Google Drive voll, als die Colab-Maschine
+bei Runde 1262 unerwartet stoppte: Dateien werden zuerst lokal geschrieben und im Hintergrund hochgeladen,
+und bei vollem Drive scheitert das ohne Meldung. Auf Drive lag nur das Netz von Runde 1167; die Runden
+1168 bis 1260 (etwa 3{,}2 Stunden) gingen verloren und wurden neu gespielt. Zweitens schlief der Laptop
+während der Endspiele mit zugeklapptem Deckel ein, was 3{,}4 Stunden kostete; verloren ging dabei nichts.
+
+\section{Ergebnisse der Endspiele}
+
+\subsection{Gegen die bisherigen Netze}
+
+Alle Paare spielten die 300 verschiedenen Eröffnungen von beiden Seiten, also 600 Partien pro Paar und
+Einstellung. Als Maßstab spielte zusätzlich large 240 gegen medium 240 auf denselben Eröffnungen.
+
+\begin{table}[ht]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{llrrr}
+\toprule
+Paar & Sim. & Punkte & S -- U -- N & Eröffn.\ schlechter / gleich / besser \\
+\midrule
+final 1296 -- large 240 & 500  & 61{,}3\,\% & 170 -- 395 -- 35 & 22 / 144 / 134 \\
+                        & 2000 & 58{,}2\,\% & 122 -- 455 -- 23 & 19 / 173 / 108 \\
+                        & zus. & \textbf{59{,}8\,\%} & 292 -- 850 -- 58 & \textbf{41} / 317 / 242 \\
+\midrule
+final 1296 -- medium 240 & 500  & 64{,}0\,\% & 196 -- 376 -- 28 & 17 / 125 / 158 \\
+                         & 2000 & 64{,}2\,\% & 188 -- 395 -- 17 & 9 / 133 / 158 \\
+                         & zus. & \textbf{64{,}1\,\%} & 384 -- 771 -- 45 & \textbf{26} / 258 / 316 \\
+\midrule
+large 240 -- medium 240 (Maßstab) & 500  & 53{,}4\,\% & 117 -- 407 -- 76 & 57 / 154 / 89 \\
+                                  & 2000 & 54{,}0\,\% & 98 -- 452 -- 50 & 35 / 179 / 86 \\
+                                  & zus. & 53{,}7\,\% & 215 -- 859 -- 126 & 92 / 333 / 175 \\
+\bottomrule
+\end{tabular}
+\caption{Direkte Partien. S -- U -- N: Siege, Unentschieden, Niederlagen des erstgenannten Netzes.
+Eröffnungen nach der Eröffnungsregel aus dessen Sicht (je 300).}
+\label{tab:netze}
+\end{table}
+
+Das finale Netz ist in beiden Bedenkzeiten klar das stärkste (Tabelle~\ref{tab:netze}). Mehr Simulationen
+machen seinen Vorsprung kaum kleiner: Gegen large 240 sinkt die Punktzahl von 61{,}3 auf 58{,}2\,\%, weil
+mehr Partien remis enden, aber die Zahl der schlechteren Eröffnungen bleibt mit 22 bzw.\ 19 von 300
+niedrig. Der Maßstab zeigt, was das bedeutet: Der letzte große Schritt davor, large 240 gegen medium 240,
+war noch auf 57 bzw.\ 35 Eröffnungen schlechter.
+
+\subsection{Gegen Minimax}
+
+Gegen Minimax wurden alle 102 verschiedenen Eröffnungen mit zwei Zügen von beiden Seiten gespielt. Die
+ersten 53 davon sind die verschiedenen Eröffnungen, die das Netz \emph{medium 132} im ersten großen
+Minimax-Test gespielt hatte; auf ihnen lassen sich beide direkt vergleichen.
+
+\begin{table}[ht]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{llrrrr}
+\toprule
+Sim. & Tiefe & final 1296 & schlechter / gleich / besser & final, 53 Eröffn. & medium 132, 53 Eröffn. \\
+\midrule
+500  & 13 & 88{,}0\,\% (163--33--8)  & 3 / 6 / 93   & 90{,}1\,\%, 0 / 2 / 51 & 73{,}1\,\%, 3 / 17 / 33 \\
+500  & 15 & 79{,}9\,\% (133--60--11) & 5 / 16 / 81  & 77{,}8\,\%, 3 / 9 / 41 & 62{,}3\,\%, 10 / 13 / 30 \\
+2000 & 13 & 94{,}1\,\% (182--20--2)  & 0 / 2 / 100  & 95{,}8\,\%, 0 / 1 / 52 & 84{,}9\,\%, 0 / 6 / 47 \\
+2000 & 15 & 88{,}2\,\% (159--42--3)  & 1 / 7 / 94   & 89{,}2\,\%, 0 / 4 / 49 & 75{,}5\,\%, 3 / 13 / 37 \\
+\midrule
+\multicolumn{2}{l}{zusammen} & \textbf{87{,}6\,\%} (637--155--24) & \textbf{9} / 31 / 368 & & \\
+\bottomrule
+\end{tabular}
+\caption{Partien gegen Minimax, 204 pro Zeile (auf den 53 gemeinsamen Eröffnungen 106).}
+\label{tab:minimax}
+\end{table}
+
+Gegen Minimax verliert das finale Netz mit 2000 Simulationen nur noch 2 bzw.\ 3 von 204 Partien und ist
+selbst gegen Tiefe 15 nur auf einer von 102 Eröffnungen schlechter (Tabelle~\ref{tab:minimax}). Auf
+denselben Eröffnungen holt es 11 bis 17 Punkte mehr als medium 132 und verliert etwa dreimal seltener.
+
+\section{Diskussion}
+
+\paragraph{Was geholfen hat.} Der wichtigste Befund des Projekts ist schlicht: \emph{Partien}. Größe,
+Aufbau, zusätzliche Lektionen und tiefere Suche brachten bei gleicher Datenmenge kaum etwas; frische
+Partien halfen in jedem Versuch. Konsequent war deshalb, die verbleibende Rechenzeit fast vollständig in
+einen langen Lauf mit möglichst vielen Partien pro Stunde zu stecken und dafür sogar die Suche pro Zug zu
+halbieren. Die Endspiele bestätigen diese Wahl: Das Netz wurde nicht nur in den Punkten, sondern auch nach
+der strengeren Eröffnungsregel deutlich besser.
+
+\paragraph{Wo es aufhört.} Die Checks flachten ab etwa Runde 1000 ab, und die schlechteren Eröffnungen
+fielen auch mit kleinerer Lernrate nicht weiter unter etwa 32. Verluste und Remisanteil im Selbstspiel
+waren ebenfalls flach. Das deutet darauf hin, dass das Netz bei dieser Größe und diesen Einstellungen nahe
+an seinem Ende ist. Weitere Runden hätten vermutlich wenig gebracht; ein nächster Schritt bräuchte eher
+ein größeres Netz, das von den vielen Partien profitieren kann, oder bessere Partien pro Rechenzeit.
+
+\paragraph{Grenzen der Messung.} Einige Einschränkungen gehören zu den Ergebnissen:
+\begin{itemize}
+\item \emph{Zufall.} 600 Partien sind auf etwa $\pm1{,}5$ Punkte genau, 204 auf etwa $\pm2{,}5$ (geschätzt).
+Die großen Unterschiede in den Tabellen liegen deutlich darüber, kleine Unterschiede zwischen Zeilen nicht.
+\item \emph{Der Minimax-Vergleich.} medium 132 ist kleiner und viel kürzer trainiert. Der Vergleich zeigt den
+Fortschritt des ganzen Projekts, nicht den des finalen Laufs allein. Ein direkter Maßstab wäre large 240
+gegen Minimax auf denselben Eröffnungen; das wurde nicht gespielt.
+\item \emph{Checks bei 100 Simulationen} überschätzen Unterschiede gegenüber längerer Bedenkzeit. In den
+Endspielen blieb der Vorsprung bei 500 Simulationen aber gleich groß wie in den Checks (61 bis 62\,\%) und
+sank bei 2000 nur wenig.
+\item \emph{Kein starker externer Gegner.} Der einzige Vergleich mit einem fremden Programm (das Netz von
+uttt.ai, mit unserer Suche) war mit medium ausgeglichen. Wie stark das finale Netz im Vergleich zu den
+besten Programmen ist, bleibt offen.
+\end{itemize}
+
+\paragraph{Symmetrie.} Das Netz ist nicht genau symmetrisch: Gibt man ihm dieselbe Stellung in allen acht
+Drehungen und Spiegelungen, unterscheiden sich die Zugverteilungen im Mittel um 6{,}7\,\% und die
+Bewertungen um 0{,}09 (auf der Skala von $-1$ bis $+1$). Das finale Netz ist dabei symmetrischer als large
+240 (7{,}8\,\%) und medium 240 (9{,}1\,\%). Die Symmetrie wird nur gelernt, weil jede Stichprobe zufällig
+gedreht wird, nicht durch den Aufbau erzwungen. Ein billiger, nicht getesteter Gewinn wäre, die Stellung
+bei jeder Netzabfrage in der Suche zufällig zu drehen, wie AlphaGo Zero~\cite{alphagozero} und
+KataGo~\cite{katago} es tun: Die kleinen Fehler mitteln sich dann über die vielen Simulationen heraus.
+
+\paragraph{Was offen bleibt.}
+\begin{itemize}
+\item Gewichtsmittelung der letzten Snapshots (sie liegen nur auf Drive).
+\item Zufällige Drehung in der Suche (siehe oben), testbar ohne neues Training.
+\item large 240 gegen Minimax als direkter Maßstab.
+\item Ein größeres Netz, trainiert aus dem Archiv der rund einer Million gespeicherten Partien. Für large
+kostete ein solcher Lauf auf der L4 etwa drei Stunden, für ein größeres Netz entsprechend mehr; er würde zeigen, ob Größe bei dieser Datenmenge nun hilft.
+\end{itemize}
+
+\paragraph{Zur Arbeitsweise.} Hilfreich war, Entscheidungsregeln \emph{vor} einem Lauf festzulegen
+(Schwellen von 53\,\% bzw.\ 48\,\%, Stopp-Regeln) und Netze nach direkten Partien statt nach Verlusten oder
+Checks gegen ein drittes Netz zu beurteilen. Das Linien-Netz etwa führte in den Checks gegen medium und
+verlor trotzdem direkt gegen large. Ebenso nützlich war die Eröffnungsregel: Sie zeigte, dass der
+Fortschritt im finalen Lauf zeitweise nur aus gleichen Eröffnungen kam, die zu besseren wurden, und erst
+später aus weniger Fehlern.
+
+\section{Fazit}
+
+Das Projekt hat sein Ziel erreicht: Das finale Netz ist ein reines, selbst gelerntes Netz, das deutlich
+stärker spielt als alle Vorgänger und vor allem \emph{seltener schlechter} als sie. Gegen large 240 ist es
+auf nur 41 von 600 Eröffnungen schlechter (der vorherige Schritt: 92), gegen Minimax der Tiefe 15 mit
+2000 Simulationen auf einer von 102. Der Weg dorthin war nicht ein besserer Aufbau, sondern die Einsicht
+aus vielen gleich endenden Versuchen, dass die Netze vor allem mehr Partien brauchten, und die
+Entscheidung, die Rechenzeit darauf zu konzentrieren. Zugleich zeigen die flachen Kurven am Ende, dass
+dieses Netz mit diesen Einstellungen weitgehend ausgeschöpft ist. Wer weitergehen will, findet im Archiv
+der gespeicherten Partien die Grundlage für einen nächsten, größeren Schritt.
+
+\begin{thebibliography}{9}
+\bibitem{alphazero} D.~Silver et~al.: \emph{A general reinforcement learning algorithm that masters chess,
+shogi, and Go through self-play.} Science 362 (2018).
+\bibitem{alphagozero} D.~Silver et~al.: \emph{Mastering the game of Go without human knowledge.} Nature 550
+(2017).
+\bibitem{katago} D.~J.~Wu: \emph{Accelerating Self-Play Learning in Go.} arXiv:1902.10565 (2019).
+\end{thebibliography}
+
+\end{document}

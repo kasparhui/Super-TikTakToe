@@ -171,3 +171,11 @@ models/pretest/
 # uttt.ai for comparison: their files and the match against them (local only)
 external/
 src/test_vs_utttai.py
+
+# LaTeX build files of the paper
+paper/*.aux
+paper/*.log
+paper/*.out
+paper/*.fls
+paper/*.fdb_latexmk
+paper/*.synctex.gz
