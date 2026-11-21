@@ -1,6 +1,6 @@
 # Training notes
 
-Last updated: 20 November 2026 (test results and the final run, now ending at round 1296; shortened on 17 November; the long version with every check and interim reading is
+Last updated: 21 November 2026 (test results, the final run finished at round 1296 and its end matches; shortened on 17 November; the long version with every check and interim reading is
 in git, commit `00a719e`, and before that `7c4277a`).
 This file is the memory of the project's training decisions. It is kept up to date whenever something
 that influences the training changes.
@@ -24,6 +24,13 @@ that influences the training changes.
 - **Tests for the final model (18 November):** `sims_200` (200 simulations, about 1.7 times the games per hour)
   won its match against `more_games` 260 with 56.8% and passed the rule; `fast_moves` (KataGo's trick) 51.8%, did
   not. The final run (`python3 src/train.py final`, notebook `colab_final.ipynb`) continues `sims_200`.
+- **The final run is finished (20 November, round 1296, `models/final/alphazero_large.pt`):** about 1,041,000
+  new games after round 279 (37.3 hours of self-play and learning, all Colab units used). In the training checks
+  against large 240 (100 simulations, 512 games) it scores about 62% at the end (from about 60% before the late
+  learning rate); openings worse about 35 of 256. End matches (laptop, 21 November, 300 different openings from
+  both sides): against large 240 61.3% at 500 simulations and 58.2% at 2000, worse in only 22 and 19 of 300
+  openings (large 240 against medium 240: 57 and 35); against minimax depth 15 with 2000 simulations 88.2%,
+  worse in 1 of 102 openings (see "End matches of the final network").
 
 ## Plan for the remaining units (the user's plan, 17 November)
 
@@ -246,6 +253,73 @@ Drive's log is left as it is while the run goes on; the same cleaning is done ag
 large 240 of the lost rounds 1168 to 1216 (7 checks): 62.6% on average, worse openings about 29; of the late
 rate's rounds kept, 1120 to 1176 (8 checks): 61.2%, worse openings about 32. Guessed: the difference is mostly
 chance (one check has 512 games, about +-2 points), but the lost rounds hint that the late rate still adds a little.
+
+**End of the final run (20 November, round 1296):** the user's copies of the network (iteration 1296) and log;
+Colab units used up. The log again had the lost rows 1168 to 1222 (the same as in the file of lost rows); removed,
+the log is continuous from 1 to 1296. 37.29 hours of self-play and learning after round 279 (38.55 with the checks),
+1,017 rounds, 1,041,000 games; 0.00003 in every round from 1120. (The network file's optimizer shows the learning
+rate 0.001: guessed, the start cell was run once more after the end, which loads the file, sets the starting rate,
+plays no round and saves again; the weights are the same, and the rate is set again in every round anyway.)
+
+| rounds | checks | points against large 240 | openings worse / equal / better (per check) | ties of 512 |
+|---|---|---|---|---|
+| 888 to 951 | 8 | 60.4% | 33.2 / 104.1 / 118.6 | 272 |
+| 952 to 1015 | 8 | 60.3% | 33.6 / 102.0 / 120.4 | 276 |
+| 1016 to 1079 | 8 | 59.7% | 36.8 / 98.6 / 120.6 | 278 |
+| 1080 to 1119 | 5 | 61.0% | 33.2 / 95.0 / 127.8 | 271 |
+| 1120 to 1176 (0.00003) | 8 | 61.2% | 31.6 / 102.2 / 122.1 | 287 |
+| 1177 to 1240 | 8 | 62.5% | 31.8 / 90.5 / 133.8 | 276 |
+| 1241 to 1296 | 7 | 61.9% | 35.7 / 92.0 / 128.3 | 273 |
+
+Last check (round 1296): 62.1%, 38 / 84 / 134. Measured: the late learning rate lifted the points from about 60%
+to about 62% (the lost rounds 1168 to 1216 also had 62.6%), but the worse openings did not fall further (about
+32 to 36, best 20 at round 904). Policy loss about 1.19, value loss about 0.098, ties in self-play about 570 of
+1024 in the last 20 rounds: flat since about round 1000. Guessed: the network is near the end of what this size
+and these settings give; more rounds would add little.
+
+**End matches of the final network (20 to 21 November, laptop, `src/test_final.py`, results in
+`models/final/results/`):** about 16 hours (3.4 of them lost because the laptop slept with the lid closed;
+`caffeinate` does not stop that, and `-s` works only on mains power).
+- Openings without repetitions (the user's wish): the board has 8 symmetries (turning, mirroring); openings that
+  are the same position after one of them count once. Measured: the old tournament's 128 openings are only 71
+  positions, medium 132's 83 minimax openings only 53. There are 102 different 2-move openings and 822 different
+  3-move ones. Between the networks: all 102 of 2 moves plus 198 of 3 moves (fixed random choice) = 300, each from
+  both sides, 600 games per pair and setting. Against minimax: all 102 of 2 moves, the first 53 are medium 132's.
+  Without randomness the same opening and side would repeat the same game.
+- Between the networks (both with the same simulations; openings worse / equal / better by the user's rule):
+
+| pair | 500 simulations | 2000 simulations |
+|---|---|---|
+| final 1296 against large 240 | 61.3% (170-395-35), 22 / 144 / 134 | 58.2% (122-455-23), 19 / 173 / 108 |
+| final 1296 against medium 240 | 64.0% (196-376-28), 17 / 125 / 158 | 64.2% (188-395-17), 9 / 133 / 158 |
+| large 240 against medium 240 (yardstick) | 53.4% (117-407-76), 57 / 154 / 89 | 54.0% (98-452-50), 35 / 179 / 86 |
+
+- Against minimax (204 games each; per opening worse / equal / better from the network's side; the medium 132
+  columns are on the same 53 openings, 106 games):
+
+| simulations, depth | final 1296, all 102 openings | final 1296, the 53 | medium 132, the 53 |
+|---|---|---|---|
+| 500, 13 | 88.0% (163-33-8), 3 / 6 / 93 | 90.1%, 0 / 2 / 51 | 73.1%, 3 / 17 / 33 |
+| 500, 15 | 79.9% (133-60-11), 5 / 16 / 81 | 77.8%, 3 / 9 / 41 | 62.3%, 10 / 13 / 30 |
+| 2000, 13 | 94.1% (182-20-2), 0 / 2 / 100 | 95.8%, 0 / 1 / 52 | 84.9%, 0 / 6 / 47 |
+| 2000, 15 | 88.2% (159-42-3), 1 / 7 / 94 | 89.2%, 0 / 4 / 49 | 75.5%, 3 / 13 / 37 |
+
+- Measured: the final network is clearly the strongest; more simulations do not shrink its lead over large 240
+  (worse openings 22 at 500, 19 at 2000), and against medium 240 it is worse in only 9 of 300 openings at 2000.
+  Against minimax it loses 2 to 11 of 204 games; medium 132 lost about 3 times as often on the same openings.
+  Guessed: about +-1.5 points for 600 games, about +-2.5 for 204. medium 132 is smaller and much shorter trained,
+  so the minimax comparison shows the progress of the whole project, not of the final run alone.
+- Not done: weight averaging of the last snapshots (they are only on Drive); large 240 against minimax on the
+  same openings (would give a direct yardstick, about 6 to 7 hours on the laptop).
+
+**Symmetry of the networks (measured 21 November):** 400 positions from random games, each given in all 8
+turnings / mirrorings. Spread of the value (scale -1 to 1) mean / 90% / largest: final 1296 0.09 / 0.16 / 0.30,
+large 240 0.12 / 0.20 / 0.39, medium 240 0.11 / 0.20 / 0.36; the move distributions differ by 6.7%, 7.8% and 9.1%
+on average; the same best move in all 8 in 59% to 63% (often two moves are almost equal). So: about symmetric,
+not exactly; the training only turns each batch of positions by one random symmetry (`random_symmetry`, each
+position is learned about twice), the network design does not force it. Not tried, guessed to help most for the
+least: turning the position randomly at every network question in the search (as AlphaGo Zero and KataGo do),
+free in time; could be tested on the final network on the laptop (about 40 minutes).
 
 Not proposed, and why: bigger network (size is not the limit yet); line layers (lost to large, 1.45 times
 slower); medium (2.3 times faster, but less room to grow over a long run; small showed the size cap);
